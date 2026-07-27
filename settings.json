@@ -1,0 +1,138 @@
+{
+  "connection": {
+    "dbName": "loodsman",
+    "remember": false,
+    "url": "http://127.0.0.1:8076/api/v4/",
+    "maxConcurrentRequests": 10
+  },
+  "mapping": {
+    "source" : {
+      "type": "xlsx",
+      "path": "C:\\Users\\han\\Desktop\\data.xlsx"
+    },
+    "objectsSheet": {
+      "name": "Объекты",
+      "headersRowIndex": 1
+    },
+    "linksSheet": {
+      "name": "Связи",
+      "headersRowIndex": 1,
+      "parentColumnIndex": 1,
+      "childColumnIndex": 2,
+      "linkType": "Состоит из ..."
+    },
+    "identifierColumn": "код классификатора",
+    "attributes": [
+      {
+        "attrColumn": "наименование",
+        "loodsmanAttr": "Наименование"
+      },
+      {
+        "attrColumn": "Без чертежа",
+        "loodsmanAttr": "Дополнение наименования",
+        "replace": {
+          "type": "any",
+          "find": "any",
+          "target": "БЧ"
+        }
+      }
+    ],
+    "types": [
+      {
+        "target": "Папка",
+        "source": "обозначение",
+        "state": "Папка для чтения",
+        "isProject": false,
+        "linkToRoot": true,
+        "conditions": {
+          "single": {
+            "type": "check",
+            "column": "Раздел спецификации",
+            "is": "Изделия"
+          },
+          "or": [],
+          "and": []
+        }
+      },
+      {
+        "target": "Сборочная единица",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "conditions": {
+          "single": {},
+          "or": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Изделия"
+            },
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Сборочные единицы"
+            }
+          ],
+          "and": []
+        }
+      },
+      {
+        "target": "Деталь",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "дет"
+            },
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Детали"
+            },
+            {
+              "type": "parse",
+              "column": "обозначение",
+              "is": "Т"
+            },
+            {
+              "type": "parse",
+              "column": "обозначение",
+              "is": "T"
+            }
+          ]
+        }
+      },
+      {
+        "target": "Деталь",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "покуп"
+            },
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Детали"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

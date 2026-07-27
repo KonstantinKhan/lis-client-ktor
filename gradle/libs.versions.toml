@@ -1,0 +1,18 @@
+[versions]
+kotlin="2.4.10"
+kotlinxSerialization="1.11.0"
+logback="1.5.38"
+coroutines="1.11.0"
+poi="5.5.1"
+
+[libraries]
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization"}
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+
+poi = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
