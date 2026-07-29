@@ -21,6 +21,11 @@ class Client(
     private val requestGate = Semaphore(connection.maxConcurrentRequests)
 
     private val client: HttpClient = HttpClient(CIO) {
+        // Без этого не-2xx ответы (Loodsman тоже отдаёт InternalServerError-style JSON на
+        // ошибках) молча доходят до body<T>(), который пытается задесериализовать тело ошибки
+        // как успешный DTO (например IdentifierDto — просто число) — отсюда невнятные
+        // "Illegal input: Unexpected JSON token" вместо реальной причины сбоя.
+        expectSuccess = true
         defaultRequest {
             contentType(ContentType.Application.Json)
             url(connection.url)

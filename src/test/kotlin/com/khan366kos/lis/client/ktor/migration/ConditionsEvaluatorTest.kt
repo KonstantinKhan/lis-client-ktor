@@ -38,8 +38,8 @@ class ConditionsEvaluatorTest {
         and = listOf(
             Rule(type = "check", column = "Тип АСУП", isValue = "дет"),
             Rule(type = "check", column = "Раздел спецификации", isValue = "Детали"),
-            Rule(type = "parse", column = "обозначение", isValue = "Т"),
-            Rule(type = "parse", column = "обозначение", isValue = "T"),
+            Rule(type = "notEndsWith", column = "обозначение", isValue = "Т"),
+            Rule(type = "notEndsWith", column = "обозначение", isValue = "T"),
         ),
     )
 

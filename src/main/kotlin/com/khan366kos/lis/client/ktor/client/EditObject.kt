@@ -1,5 +1,6 @@
 package com.khan366kos.lis.client.ktor.client
 
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.IdentifierDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
@@ -33,6 +34,15 @@ class EditObject(
         requestGate.withPermit {
             client.postWithSession("EditObject/new-object", sessionId) {
                 setBody(loodsmanObject)
+            }.body()
+        }
+
+    // Создаёт объект интегрированного с ПОЛИНОМ:MDM типа: создание и связывание с элементом
+    // Полином (по его location-строке) происходят за один нативный вызов Loodsman.
+    suspend fun createBoObject(sessionId: String, data: CreateBoObjectInputDto): Int =
+        requestGate.withPermit {
+            client.postWithSession("EditObject/create-bo-object", sessionId) {
+                setBody(data)
             }.body()
         }
 }

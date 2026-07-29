@@ -7,6 +7,7 @@ import com.khan366kos.lis.client.ktor.domain.Status
 import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.fileExistsInWorkingDir
 import com.khan366kos.lis.client.ktor.dsl.worker
+import com.khan366kos.lis.client.ktor.polynom.client.PolynomClient
 import java.io.File
 
 fun ICorChainDsl<MigrationContext>.checkConfig() = worker {
@@ -31,6 +32,7 @@ fun ICorChainDsl<MigrationContext>.readConfig() = worker {
     handle {
         settings = json.decodeFromString(File(configFileName).readText())
         loodsmanClient = Client(connection = settings.connection)
+        polynomClient = PolynomClient(connection = settings.polynom)
         status = Status.LOGIN
         replStatus = ReplStatus.AUTH
         println("Конфиг успешно прочитан")

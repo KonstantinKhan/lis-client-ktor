@@ -2,6 +2,7 @@ package com.khan366kos.lis.client.ktor.migration
 
 import com.khan366kos.lis.client.ktor.domain.Identifier
 import com.khan366kos.lis.client.ktor.domain.MappingElement
+import com.khan366kos.lis.client.ktor.domain.MaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
@@ -30,15 +31,20 @@ suspend fun MigrationContext.runObjectsMigration() {
     val objectsCreated = AtomicInteger(0)
     val rowsFailed = AtomicInteger(0)
 
-    val created = coroutineScope {
+    val results = coroutineScope {
         dataRows.map { excelRow ->
             async {
                 processObjectRow(RowView(headerMap, excelRow.cells), objectsCreated, rowsFailed)
             }
         }.awaitAll()
-    }.flatten()
+    }
 
+    // Слияние в общие списки идёт последовательно, после awaitAll() — сами row-корутины
+    // ничего не пишут в identifiers/materialCandidates напрямую, чтобы не гонять запись в
+    // MutableList из нескольких потоков одновременно.
+    val created = results.flatMap { it.identifiers }
     identifiers.addAll(created)
+    materialCandidates.addAll(results.flatMap { it.materialCandidates })
 
     println(
         "Объекты: строк ${dataRows.size}, создано объектов ${objectsCreated.get()}, " +
@@ -79,13 +85,18 @@ suspend fun MigrationContext.runLinksMigration() {
     println("Связи: строк ${dataRows.size}, пар для линковки ${linkPairs.size}, создано $linksCreated, ошибок ${linksFailed.get()}")
 }
 
+private data class ObjectRowResult(
+    val identifiers: List<Identifier>,
+    val materialCandidates: List<MaterialCandidate>,
+)
+
 private suspend fun MigrationContext.processObjectRow(
     row: RowView,
     objectsCreated: AtomicInteger,
     rowsFailed: AtomicInteger
-): List<Identifier> {
+): ObjectRowResult {
     val matches = settings.mapping.types.filter { ConditionsEvaluator.matches(it.conditions, row) }
-    if (matches.isEmpty()) return emptyList()
+    if (matches.isEmpty()) return ObjectRowResult(emptyList(), emptyList())
 
     val createdObjects = matches.mapNotNull { mappingElement ->
         val keyAttr = row.value(mappingElement.source) ?: return@mapNotNull null
@@ -106,10 +117,32 @@ private suspend fun MigrationContext.processObjectRow(
         }
     }
 
+    // Кандидаты на материалы ПОЛИНОМ собираются здесь (для целевых типов из
+    // materials.appliesToTargets, например "Деталь") и обрабатываются отдельным проходом
+    // постобработки после того, как все строки Excel уже прочитаны (runMaterialsMigration) —
+    // столбцы (1)/(2) читаются независимо от identifierColumn листа "Связи".
+    val materials = settings.mapping.materials
+    val materialCandidatesForRow = createdObjects
+        .filter { (mappingElement, _) -> mappingElement.target in materials.appliesToTargets }
+        .map { (_, loodsmanId) ->
+            MaterialCandidate(
+                detailLoodsmanId = loodsmanId,
+                drawingDesignation = row.value(materials.drawingDesignationColumn),
+                classifierCode = row.value(materials.classifierCodeColumn),
+                detailClassifierCode = row.value(settings.mapping.identifierColumn),
+            )
+        }
+
     // В identifiers (резолв листа "Связи") попадают только инженерные объекты — папка не должна
     // становиться родителем в структуре, только организационным контейнером.
-    val classifierId = row.value(settings.mapping.identifierColumn)?.toLongOrNull() ?: return emptyList()
-    return nonProjectObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierId) }
+    val classifierId = row.value(settings.mapping.identifierColumn)?.toLongOrNull()
+    val identifiersForRow = if (classifierId == null) {
+        emptyList()
+    } else {
+        nonProjectObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierId) }
+    }
+
+    return ObjectRowResult(identifiersForRow, materialCandidatesForRow)
 }
 
 private suspend fun MigrationContext.createLoodsmanObject(

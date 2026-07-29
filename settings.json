@@ -3,7 +3,14 @@
     "dbName": "loodsman",
     "remember": false,
     "url": "http://127.0.0.1:8076/api/v4/",
-    "maxConcurrentRequests": 10
+    "maxConcurrentRequests": 50
+  },
+  "polynom": {
+    "url": "http://127.0.0.1:5100/",
+    "storageId": null,
+    "moduleName": "",
+    "clientType": 0,
+    "maxConcurrentRequests": 5
   },
   "mapping": {
     "source" : {
@@ -98,14 +105,18 @@
               "is": "Детали"
             },
             {
-              "type": "parse",
+              "type": "notEndsWith",
               "column": "обозначение",
               "is": "Т"
             },
             {
-              "type": "parse",
+              "type": "notEndsWith",
               "column": "обозначение",
               "is": "T"
+            },
+            {
+              "type": "empty",
+              "column": "Тип объекта"
             }
           ]
         }
@@ -129,10 +140,29 @@
               "type": "check",
               "column": "Раздел спецификации",
               "is": "Детали"
+            },
+            {
+              "type": "empty",
+              "column": "Тип объекта"
             }
           ]
         }
       }
-    ]
+    ],
+    "materials": {
+      "appliesToTargets": ["Деталь"],
+      "drawingDesignationColumn": "Обозначение материала по чертежу",
+      "classifierCodeColumn": "Код классификатора объекта который записан в поле сортамента",
+      "classifierCodePropertyAbsoluteCode": "c:ClassifData::pd:ClassifCode",
+      "codesReferenceName": "Коды",
+      "materialTarget": "Материал по КД",
+      "materialState": "Проектирование",
+      "detailLinkType": "Изготавливается из ...",
+      "hierarchy": {
+        "referenceName": "Конструкторские материалы",
+        "catalogName": "Материалы по КД",
+        "groupName": "Обозначение материала по чертежу"
+      }
+    }
   }
 }

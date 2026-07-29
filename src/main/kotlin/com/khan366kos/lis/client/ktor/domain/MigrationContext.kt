@@ -5,6 +5,8 @@ import com.khan366kos.lis.client.ktor.domain.LoodsmanState
 import com.khan366kos.lis.client.ktor.domain.LoodsmanType
 import com.khan366kos.lis.client.ktor.domain.Settings
 import com.khan366kos.lis.client.ktor.client.Client
+import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
+import com.khan366kos.lis.client.ktor.polynom.client.PolynomClient
 import com.khan366kos.lis.client.ktor.repl.ReplStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,5 +33,11 @@ data class MigrationContext(
         state = LoodsmanState.ReadFolder,
         name = "Миграция",
         isProject = true
-    )
+    ),
+    var polynomClient: PolynomClient = PolynomClient(connection = settings.polynom),
+    var polynomAccessToken: String = "",
+    var polynomRefreshToken: String = "",
+    var polynomLoggedIn: Boolean = false,
+    val materialCandidates: MutableList<MaterialCandidate> = mutableListOf(),
+    var materialsGroupId: IdentifiableObjectDto? = null,
 )

@@ -6,14 +6,22 @@ import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.logic.Validator
 import com.khan366kos.lis.client.ktor.migration.runLinksMigration
+import com.khan366kos.lis.client.ktor.migration.runMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runObjectsMigration
 
 fun ICorChainDsl<MigrationContext>.validateMapping() = worker {
     on { status == Status.CONNECT_CHECKOUT }
     handle {
-        if (!Validator(settings, loodsmanTypes).isValidTarget()) {
+        val validator = Validator(settings, loodsmanTypes)
+        if (!validator.isValidTarget()) {
             throw RuntimeException(
                 "В settings.json указан target-тип из mapping.types, отсутствующий среди типов Loodsman"
+            )
+        }
+        if (!validator.isValidMaterialTarget()) {
+            throw RuntimeException(
+                "В settings.json mapping.materials.materialTarget указывает на тип, " +
+                    "отсутствующий среди типов Loodsman"
             )
         }
     }
@@ -45,6 +53,21 @@ fun ICorChainDsl<MigrationContext>.migrateLinks() = worker {
     }
     except { e ->
         System.err.println("Ошибка миграции связей: ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateMaterials() = worker {
+    on { status == Status.LINKS_MIGRATED }
+    handle {
+        runMaterialsMigration()
+        status = Status.MATERIALS_MIGRATED
+        println("Миграция материалов ПОЛИНОМ завершена")
+    }
+    except { e ->
+        // Статус+тело ответа Полином печатаются внутри runMaterialsMigration() (except{} тут не
+        // suspend, а ResponseException.response.bodyAsText() — suspend-вызов).
+        System.err.println("Ошибка миграции материалов ПОЛИНОМ: ${e.message}")
         throw e
     }
 }

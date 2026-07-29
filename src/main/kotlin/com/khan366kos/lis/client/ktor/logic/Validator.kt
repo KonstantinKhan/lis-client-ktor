@@ -9,6 +9,9 @@ class Validator(
 ) {
     fun isValidTarget() =
         settings.mapping.types.all { element -> element.target in types.mapToSet { it.name } }
+
+    fun isValidMaterialTarget() =
+        settings.mapping.materials.materialTarget in types.mapToSet { it.name }
 }
 
 inline fun <T, R> List<T>.mapToSet(transform: (T) -> R): Set<R> {

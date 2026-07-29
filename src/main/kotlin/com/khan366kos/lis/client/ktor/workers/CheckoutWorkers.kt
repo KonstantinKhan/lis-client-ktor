@@ -7,7 +7,6 @@ import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.CheckOutInDbInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.response.SaveFilesErrorOutputDto
-import com.khan366kos.lis.client.ktor.repl.ReplStatus
 import io.ktor.client.call.body
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.async
@@ -60,8 +59,10 @@ fun ICorChainDsl<MigrationContext>.connectCheckout() = worker {
                 println("success")
                 val isAdmin = it == 1
                 if (isAdmin) {
+                    // replStatus остаётся AUTH: следующий шаг — вход в ПОЛИНОМ (PolynomInit,
+                    // гейтится на status == CONNECT_CHECKOUT && !polynomLoggedIn), только после
+                    // него ReplConsole переходит в COMMAND (см. workers/PolynomLoginWorkers.kt).
                     status = Status.CONNECT_CHECKOUT
-                    replStatus = ReplStatus.COMMAND
                 }
                 println("Подключение от имени админа")
             },

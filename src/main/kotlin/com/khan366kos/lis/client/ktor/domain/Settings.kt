@@ -6,11 +6,13 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Settings(
     val connection: Connection,
+    val polynom: PolynomConnection,
     val mapping: Mapping
 ) {
     companion object {
         val None = Settings(
             connection = Connection.None,
+            polynom = PolynomConnection.None,
             mapping = Mapping.None
         )
     }

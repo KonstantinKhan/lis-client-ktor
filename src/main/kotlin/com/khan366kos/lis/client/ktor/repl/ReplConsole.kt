@@ -1,10 +1,12 @@
 package com.khan366kos.lis.client.ktor.repl
 
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
+import com.khan366kos.lis.client.ktor.domain.Status
 import com.khan366kos.lis.client.ktor.repl.IRepl
 import com.khan366kos.lis.client.ktor.dsl.pipeline
 import com.khan366kos.lis.client.ktor.pipelines.LoodsmanExit
 import com.khan366kos.lis.client.ktor.pipelines.LoodsmanInit
+import com.khan366kos.lis.client.ktor.pipelines.PolynomInit
 import com.khan366kos.lis.client.ktor.pipelines.PreparePipeline
 import com.khan366kos.lis.client.ktor.repl.commands.ICommand
 import com.khan366kos.lis.client.ktor.workers.checkin
@@ -26,7 +28,17 @@ class ReplConsole(
                 }
 
                 ReplStatus.AUTH -> {
-                    LoodsmanInit.execute(context)
+                    // Loodsman-часть гоняем, только пока она не завершена — иначе, пока
+                    // ПОЛИНОМ недоступен/логин повторяется, LoodsmanInit (в т.ч. showSettings(),
+                    // у которого нет своего on{}-гейта) перезапускался бы на каждой итерации.
+                    if (context.status != Status.CONNECT_CHECKOUT) {
+                        LoodsmanInit.execute(context)
+                    }
+                    // Вход в ПОЛИНОМ — сразу после успешного логина/чекаута Loodsman, до входа
+                    // в COMMAND. Гейтится на status == CONNECT_CHECKOUT && !polynomLoggedIn,
+                    // поэтому безопасно вызывать каждую итерацию — до успеха Loodsman это
+                    // просто no-op.
+                    PolynomInit.execute(context)
                     continue
                 }
 
