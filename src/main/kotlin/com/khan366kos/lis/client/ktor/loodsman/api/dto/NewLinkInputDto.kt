@@ -12,8 +12,8 @@ data class NewLinkInputDto(
     val childType: String? = null,
     val childProduct: String? = null,
     val childVersion: String? = null,
-    val minQuantity: Int = 1,
-    val maxQuantity: Int = 1,
+    val minQuantity: Double = 1.0,
+    val maxQuantity: Double = 1.0,
     val unitId: String? = null,
     val linkType: String? = null,
 )

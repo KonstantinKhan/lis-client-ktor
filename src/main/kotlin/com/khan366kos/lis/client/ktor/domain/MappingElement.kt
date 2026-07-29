@@ -8,6 +8,7 @@ data class MappingElement(
     val source: String,
     val state: String,
     val isProject: Boolean = false,
+    val isFolder: Boolean = false,
     val linkToRoot: Boolean = false,
     val conditions: Conditions,
 )

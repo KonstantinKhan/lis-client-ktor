@@ -55,30 +55,46 @@ suspend fun MigrationContext.runObjectsMigration() {
 suspend fun MigrationContext.runLinksMigration() {
     val linksSheet = settings.mapping.linksSheet
     val rows = ExcelSaxParser().parse(excelInputStream(), linksSheet.name).toList()
+    val headerRow = rows.firstOrNull { it.rowIndex == linksSheet.headersRow }
+        ?: throw IllegalStateException(
+            "Не найдена строка заголовков (индекс ${linksSheet.headersRow}) на листе '${linksSheet.name}'"
+        )
+    val headerMap = SheetHeaders.build(headerRow.cells)
     val dataRows = rows.filter { it.rowIndex > linksSheet.headersRow }
 
-    val classifierLinks = mutableMapOf<Long, MutableSet<Long>>()
+    val linksFailed = AtomicInteger(0)
+
+    // childId -> quantity; quantity == null значит колонка количества сконфигурирована, но
+    // значение в строке не прочиталось — такая пара позже отбрасывается, а не линкуется с 1.0.
+    val classifierLinks = mutableMapOf<Long, MutableMap<Long, Double?>>()
     dataRows.forEach { row ->
         val parentId = row.cells.getOrNull(linksSheet.parentColumn)?.trim()?.toLongOrNull() ?: return@forEach
         val childId = row.cells.getOrNull(linksSheet.childColumn)?.trim()?.toLongOrNull() ?: return@forEach
-        classifierLinks.getOrPut(parentId) { mutableSetOf() }.add(childId)
+        val quantity = resolveLinkQuantity(linksSheet.quantityColumn, RowView(headerMap, row.cells))
+        classifierLinks.getOrPut(parentId) { mutableMapOf() }[childId] = quantity
     }
 
     val elementsByClassifierId = identifiers.groupBy { it.classifierId }
 
-    val linkPairs = classifierLinks.flatMap { (parentClassifierId, childClassifierIds) ->
+    val linkPairs = classifierLinks.flatMap { (parentClassifierId, children) ->
         val parents = elementsByClassifierId[parentClassifierId] ?: return@flatMap emptyList()
-        childClassifierIds.flatMap { childClassifierId ->
-            val children = elementsByClassifierId[childClassifierId] ?: return@flatMap emptyList()
-            parents.flatMap { parent -> children.map { child -> parent to child } }
+        children.flatMap { (childClassifierId, quantity) ->
+            if (quantity == null) {
+                linksFailed.incrementAndGet()
+                System.err.println(
+                    "Связь ($parentClassifierId -> $childClassifierId) пропущена: " +
+                        "не удалось прочитать '${linksSheet.quantityColumn}'"
+                )
+                return@flatMap emptyList()
+            }
+            val children2 = elementsByClassifierId[childClassifierId] ?: return@flatMap emptyList()
+            parents.flatMap { parent -> children2.map { child -> Triple(parent, child, quantity) } }
         }
     }
 
-    val linksFailed = AtomicInteger(0)
-
     val linksCreated = coroutineScope {
-        linkPairs.map { (parent, child) ->
-            async { linkObjects(parent.loodsmanId, child.loodsmanId, linksSheet.linkType, linksFailed) }
+        linkPairs.map { (parent, child, quantity) ->
+            async { linkObjects(parent.loodsmanId, child.loodsmanId, linksSheet.linkType, linksFailed, quantity) }
         }.awaitAll()
     }.count { it }
 
@@ -106,14 +122,16 @@ private suspend fun MigrationContext.processObjectRow(
     }
 
     // Несколько правил могут совпасть с одной строкой (например, Папка + головная Сборочная
-    // единица с тем же обозначением) — инженерные (не-проектные) объекты этой строки вешаются
-    // на проектную папку той же строки, а не на root.
-    val projectFolder = createdObjects.firstOrNull { (mappingElement, _) -> mappingElement.isProject }
-    val nonProjectObjects = createdObjects.filter { (mappingElement, _) -> !mappingElement.isProject }
+    // единица с тем же обозначением) — не-папочные объекты этой строки вешаются на папку той
+    // же строки, а не на root. Папка при этом не участвует в BOM-структуре (см. identifiersForRow
+    // ниже) — иначе её classifierId коллизирует с classifierId настоящего BOM-объекта той же
+    // строки в резолве листа "Связи".
+    val folder = createdObjects.firstOrNull { (mappingElement, _) -> mappingElement.isFolder }
+    val nonFolderObjects = createdObjects.filter { (mappingElement, _) -> !mappingElement.isFolder }
 
-    if (projectFolder != null) {
-        nonProjectObjects.forEach { (_, loodsmanId) ->
-            linkObjects(projectFolder.second, loodsmanId, settings.mapping.linksSheet.linkType, rowsFailed)
+    if (folder != null) {
+        nonFolderObjects.forEach { (_, loodsmanId) ->
+            linkObjects(folder.second, loodsmanId, settings.mapping.linksSheet.linkType, rowsFailed)
         }
     }
 
@@ -133,13 +151,13 @@ private suspend fun MigrationContext.processObjectRow(
             )
         }
 
-    // В identifiers (резолв листа "Связи") попадают только инженерные объекты — папка не должна
+    // В identifiers (резолв листа "Связи") попадают только не-папочные объекты — папка не должна
     // становиться родителем в структуре, только организационным контейнером.
     val classifierId = row.value(settings.mapping.identifierColumn)?.toLongOrNull()
     val identifiersForRow = if (classifierId == null) {
         emptyList()
     } else {
-        nonProjectObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierId) }
+        nonFolderObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierId) }
     }
 
     return ObjectRowResult(identifiersForRow, materialCandidatesForRow)
@@ -189,11 +207,18 @@ private suspend fun MigrationContext.linkObjects(
     parentLoodsmanId: Int,
     childLoodsmanId: Int,
     linkType: String,
-    failCounter: AtomicInteger
+    failCounter: AtomicInteger,
+    quantity: Double = 1.0
 ): Boolean = try {
     loodsmanClient.editObject.newLink(
         sessionId,
-        NewLinkInputDto(parentVersionId = parentLoodsmanId, childVersionId = childLoodsmanId, linkType = linkType)
+        NewLinkInputDto(
+            parentVersionId = parentLoodsmanId,
+            childVersionId = childLoodsmanId,
+            linkType = linkType,
+            minQuantity = quantity,
+            maxQuantity = quantity
+        )
     )
     true
 } catch (e: Exception) {

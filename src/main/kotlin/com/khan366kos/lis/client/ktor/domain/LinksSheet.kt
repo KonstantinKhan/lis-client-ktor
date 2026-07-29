@@ -12,7 +12,8 @@ data class LinksSheet(
     val rawParentColumnIndex: Int,
     @SerialName("childColumnIndex")
     val childColumnIndex: Int,
-    val linkType: String = ""
+    val linkType: String = "",
+    val quantityColumn: String = ""
 
 ) : DataSheet {
 

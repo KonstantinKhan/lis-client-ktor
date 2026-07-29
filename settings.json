@@ -26,7 +26,8 @@
       "headersRowIndex": 1,
       "parentColumnIndex": 1,
       "childColumnIndex": 2,
-      "linkType": "Состоит из ..."
+      "linkType": "Состоит из ...",
+      "quantityColumn": "конструкторское количество"
     },
     "identifierColumn": "код классификатора",
     "attributes": [
@@ -50,6 +51,7 @@
         "source": "обозначение",
         "state": "Папка для чтения",
         "isProject": false,
+        "isFolder": true,
         "linkToRoot": true,
         "conditions": {
           "single": {
