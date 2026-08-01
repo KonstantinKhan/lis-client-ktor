@@ -5,6 +5,14 @@ import com.khan366kos.lis.client.ktor.domain.Rule
 
 object ConditionsEvaluator {
 
+    // Conditions() "по умолчанию" (single=null, or=[], and=[]) для matches() означает "всегда
+    // true" — уместно для mapping.types[].conditions (элемент списка уже сам по себе opt-in), но
+    // не для гейтов вроде bomMaterials.specificationConditions, где отсутствие настройки должно
+    // означать "фича выключена", а не "матчит любую строку". isConfigured отличает "условие не
+    // задано вовсе" от "условие задано и просто не совпало".
+    fun isConfigured(conditions: Conditions): Boolean =
+        conditions.single?.column != null || conditions.or.isNotEmpty() || conditions.and.isNotEmpty()
+
     fun matches(conditions: Conditions, row: RowView): Boolean {
         val singleResult = conditions.single
             ?.takeIf { it.column != null }

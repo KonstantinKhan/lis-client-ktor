@@ -3,6 +3,7 @@ package com.khan366kos.lis.client.ktor.pipelines
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.dsl.core.ICorExec
 import com.khan366kos.lis.client.ktor.dsl.pipeline
+import com.khan366kos.lis.client.ktor.workers.migrateBomMaterials
 import com.khan366kos.lis.client.ktor.workers.migrateLinks
 import com.khan366kos.lis.client.ktor.workers.migrateMaterials
 import com.khan366kos.lis.client.ktor.workers.migrateObjects
@@ -13,4 +14,5 @@ object MigrationPipeline : ICorExec<MigrationContext> by pipeline<MigrationConte
     migrateObjects()
     migrateLinks()
     migrateMaterials()
+    migrateBomMaterials()
 }).build()

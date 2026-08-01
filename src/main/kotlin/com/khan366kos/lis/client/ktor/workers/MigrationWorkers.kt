@@ -5,6 +5,7 @@ import com.khan366kos.lis.client.ktor.domain.Status
 import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.logic.Validator
+import com.khan366kos.lis.client.ktor.migration.runBomMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runLinksMigration
 import com.khan366kos.lis.client.ktor.migration.runMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runObjectsMigration
@@ -68,6 +69,21 @@ fun ICorChainDsl<MigrationContext>.migrateMaterials() = worker {
         // Статус+тело ответа Полином печатаются внутри runMaterialsMigration() (except{} тут не
         // suspend, а ResponseException.response.bodyAsText() — suspend-вызов).
         System.err.println("Ошибка миграции материалов ПОЛИНОМ: ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateBomMaterials() = worker {
+    on { status == Status.MATERIALS_MIGRATED }
+    handle {
+        runBomMaterialsMigration()
+        status = Status.BOM_MATERIALS_MIGRATED
+        println("Миграция материалов по КД (DS) завершена")
+    }
+    except { e ->
+        // Как и в migrateMaterials() — статус+тело ответа Полином печатаются внутри
+        // runBomMaterialsMigration(), except{} тут не suspend.
+        System.err.println("Ошибка миграции материалов по КД (DS): ${e.message}")
         throw e
     }
 }

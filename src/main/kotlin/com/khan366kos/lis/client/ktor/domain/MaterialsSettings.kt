@@ -18,6 +18,12 @@ data class MaterialsHierarchy(
 data class MaterialsSettings(
     val appliesToTargets: List<String>,
     val drawingDesignationColumn: String,
+    // Столбец "Материал заменитель по чертежу" (лист "Объекты") — второй, независимый кандидат
+    // материала на ту же деталь, резолвится/создаётся тем же пайплайном (тот же
+    // classifierCodeColumn/hierarchy/detailLinkType/materialTarget), просто с другим обозначением
+    // по чертежу — см. MigrationContext.materialSubstituteCandidates и
+    // MaterialsEngine.runMaterialsMigrationInternal. "" — фича выключена, заменители не собираются.
+    val substituteDrawingDesignationColumn: String = "",
     val classifierCodeColumn: String,
     // Полный код (absoluteCode) property-definition — берётся из админки Полином напрямую,
     // резолвится через concept-property-source/get-by-absolute-code (единственный рабочий путь
@@ -39,6 +45,14 @@ data class MaterialsSettings(
     // Прямое указание objectId/typeId property-definition в обход резолва по absoluteCode — на
     // случай, если и этот путь не подойдёт на каком-то экземпляре Полином.
     val classifierCodePropertyId: IdentifiableObjectDto? = null,
+    // Группа замены "основной материал / материал-заменитель" (ObjectConfiguration/
+    // new-change-group-2 + new-change-variant-2) — создаётся ТОЛЬКО для деталей, у которых
+    // резолвился и основной материал, и заменитель (substituteDrawingDesignationColumn), см.
+    // MaterialsEngine.createSubstituteChangeGroups. groupType жёстко 2 (задано пользователем, не
+    // вынесено в settings — см. CHANGE_GROUP_TYPE_MATERIAL в MaterialsEngine.kt).
+    val changeGroupName: String = "Замена материала",
+    val mainMaterialVariantName: String = "Основной материал",
+    val substituteMaterialVariantName: String = "Материал-заменитель",
 ) {
     companion object {
         val None = MaterialsSettings(

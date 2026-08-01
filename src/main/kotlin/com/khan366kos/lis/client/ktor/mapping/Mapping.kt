@@ -1,6 +1,7 @@
 package com.khan366kos.lis.client.ktor.mapping
 
 import com.khan366kos.lis.client.ktor.domain.Attribute
+import com.khan366kos.lis.client.ktor.domain.BomMaterialsSettings
 import com.khan366kos.lis.client.ktor.domain.LinksSheet
 import com.khan366kos.lis.client.ktor.domain.MappingElement
 import com.khan366kos.lis.client.ktor.domain.MaterialsSettings
@@ -16,7 +17,8 @@ data class Mapping(
     val identifierColumn: String,
     val attributes: List<Attribute>,
     val types: List<MappingElement>,
-    val materials: MaterialsSettings
+    val materials: MaterialsSettings,
+    val bomMaterials: BomMaterialsSettings = BomMaterialsSettings.None
 ) {
     companion object {
         val None = Mapping(

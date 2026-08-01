@@ -6,9 +6,11 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsOutputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkInputDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
@@ -21,6 +23,17 @@ class EditObject(
             client.postWithSession("EditObject/new-link", sessionId) {
                 setBody(link)
             }.body()
+        }
+
+    // Не вызывается из MigrationEngine — миграция только создаёт связи (unitId передаётся сразу
+    // через newLink), никогда не правит существующие. Задел под будущую донастройку unit на уже
+    // созданных связях. delLink у вызывающего кода ОБЯЗАТЕЛЬНО false — иначе связь удаляется
+    // (см. docs/link-measure-unit-migration.md).
+    suspend fun upLink(sessionId: String, link: UpLinkInputDto): HttpResponse =
+        requestGate.withPermit {
+            client.postWithSession("EditObject/up-link", sessionId) {
+                setBody(link)
+            }
         }
 
     suspend fun setValues(sessionId: String, data: List<UpAttrValuesByIdsInputDto>): List<UpAttrValuesByIdsOutputDto> =

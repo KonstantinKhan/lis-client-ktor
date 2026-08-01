@@ -1,8 +1,11 @@
 package com.khan366kos.lis.client.ktor.migration
 
 import com.khan366kos.lis.client.ktor.domain.MaterialCandidate
+import com.khan366kos.lis.client.ktor.domain.MaterialsSettings
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeGroup2InputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeVariant2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import io.ktor.client.plugins.ResponseException
@@ -30,7 +33,7 @@ suspend fun MigrationContext.runMaterialsMigration() {
 }
 
 private suspend fun MigrationContext.runMaterialsMigrationInternal() {
-    if (materialCandidates.isEmpty()) {
+    if (materialCandidates.isEmpty() && materialSubstituteCandidates.isEmpty()) {
         println("Материалы: строк-кандидатов нет, пропускаем")
         return
     }
@@ -42,6 +45,8 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
     // реально работает: concept/get-all виснет насмерть, get-by-code требует concept и даёт 404
     // даже с верным понятием, concept-property-source/get-by-id 404 даже на id из
     // get-property-sources того же понятия — все три подтверждены нерабочими на боевой системе).
+    // Общий для основных материалов и заменителей (mapping.materials.substituteDrawingDesignationColumn) —
+    // это тот же classifierCodeColumn/hierarchy/detailLinkType/materialTarget, см. решение пользователя.
     val classifierCodeProperty = materials.classifierCodePropertyId
         ?: resolvePropertyDefinitionByAbsoluteCode(materials.classifierCodePropertyAbsoluteCode)
     // ownerScope для search/execute-property-search — без него (null) сервер падает с 500
@@ -53,18 +58,59 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
     // hierarchyMutex — резолв справочник→каталог→группа (внутри resolveMaterialsGroup);
     // elementCreationMutex — поиск/создание элемента по имени внутри группы (findOrCreateElementInHierarchy);
     // elementCacheMutex — кэш "Полином-элемент -> Loodsman-id" материала (resolveOrCreateMaterial).
+    // Общие для обоих проходов (основной + заменитель): если один и тот же элемент Полином
+    // резолвится и как чей-то основной материал, и как чей-то заменитель — нужен ровно один
+    // Loodsman-объект на него, иначе второй createBoObject упадёт на уникальном индексе.
     val hierarchyMutex = Mutex()
     val elementCreationMutex = Mutex()
-    // Разные dedupKey (разные коды классификатора) могут разрешиться в один и тот же элемент
-    // Полином (одинаковое обозначение по чертежу, оба кода не находят совпадения в поиске) —
-    // без этого кэша обе группы параллельно вызовут createBoObject с одинаковым location и
-    // Loodsman упадёт на уникальном индексе (23505 idx_uq_stmain_stkeyattr_inidtype).
     val elementCache = mutableMapOf<Pair<Int, Int>, Int>()
     val elementCacheMutex = Mutex()
 
+    // detailLoodsmanId -> materialLoodsmanId, только для реально созданных связей (linkable),
+    // нужно дальше для createSubstituteChangeGroups (деталь должна быть в ОБЕИХ map'ах сразу).
+    val mainLinked = processMaterialCandidates(
+        "Материалы", materialCandidates, materials, classifierCodeProperty, searchScope,
+        hierarchyMutex, elementCreationMutex, elementCache, elementCacheMutex,
+    )
+    val substituteLinked = if (materialSubstituteCandidates.isNotEmpty()) {
+        processMaterialCandidates(
+            "Материалы-заменители", materialSubstituteCandidates, materials, classifierCodeProperty, searchScope,
+            hierarchyMutex, elementCreationMutex, elementCache, elementCacheMutex,
+        )
+    } else {
+        emptyMap()
+    }
+
+    if (substituteLinked.isNotEmpty()) {
+        createSubstituteChangeGroups(mainLinked, substituteLinked, materials)
+    }
+}
+
+// Общий пайплайн резолва/создания "Материала по КД" + линковки к деталям — используется и для
+// основных материалов (materialCandidates), и для заменителей (materialSubstituteCandidates),
+// см. вызовы в runMaterialsMigrationInternal. ВАЖНО: списки обрабатываются ОТДЕЛЬНЫМИ вызовами
+// (не объединяются в один candidatesByKey) — у основного материала и заменителя ОДНОЙ детали
+// одинаковый classifierCode (см. решение пользователя), и общая группировка по dedupKey
+// схлопнула бы их в одну группу с одним резолвом на двоих, потеряв связь с одним из двух.
+private suspend fun MigrationContext.processMaterialCandidates(
+    label: String,
+    candidates: List<MaterialCandidate>,
+    materials: MaterialsSettings,
+    classifierCodeProperty: IdentifiableObjectDto,
+    searchScope: IdentifiableObjectDto,
+    hierarchyMutex: Mutex,
+    elementCreationMutex: Mutex,
+    elementCache: MutableMap<Pair<Int, Int>, Int>,
+    elementCacheMutex: Mutex,
+): Map<Int, Int> {
+    if (candidates.isEmpty()) {
+        println("$label: строк-кандидатов нет, пропускаем")
+        return emptyMap()
+    }
+
     // Группировка — синхронно и до запуска корутин, поэтому дальше по каждому уникальному
     // ключу работает ровно одна корутина и гонок при resolve-or-create не возникает.
-    val candidatesByKey = materialCandidates.groupBy { it.dedupKey }.filterKeys { it != null }
+    val candidatesByKey = candidates.groupBy { it.dedupKey }.filterKeys { it != null }
 
     val materialsCreated = AtomicInteger(0)
     val linksCreated = AtomicInteger(0)
@@ -72,7 +118,7 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
     val detailsNotLinked = AtomicInteger(0)
     val failures = AtomicInteger(0)
 
-    coroutineScope {
+    val linkedDetails = coroutineScope {
         candidatesByKey.values.map { group ->
             async {
                 // Группа склеена по общему коду классификатора материала (dedupKey) — у её
@@ -100,16 +146,16 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
                         "Не удалось создать материал по КД (обозначение='${representative.drawingDesignation}', " +
                             "код классификатора='${representative.classifierCode}'): ${e.message}"
                     )
-                    return@async
+                    return@async emptyList<Pair<Int, Int>>()
                 }
                 if (materialLoodsmanId == null) {
                     // Материал создавать не из чего: код классификатора либо пуст, либо не нашёл
                     // совпадения в ПОЛИНОМ (или обозначение найденного элемента не совпало с
                     // чертёжным), И при этом обозначения по чертежу тоже нет (иначе ушли бы в
                     // ветку создания нового элемента) — это не ошибка (см. решение пользователя),
-                    // но деталь(и) остаются без "Материал по КД". Печатаем id деталей и оба
-                    // исходных значения, чтобы можно было найти строку(и) в Excel и решить, что
-                    // с ней делать (данные неполные либо код в ПОЛИНОМ не заведён).
+                    // но деталь(и) остаются без "Материала по КД"/заменителя. Печатаем id деталей
+                    // и оба исходных значения, чтобы можно было найти строку(и) в Excel и решить,
+                    // что с ней делать (данные неполные либо код в ПОЛИНОМ не заведён).
                     skipped.incrementAndGet()
                     // Печатаем код классификатора и Loodsman id каждой ЗАТРОНУТОЙ ДЕТАЛИ (не код
                     // материала-по-сортаменту representative.classifierCode — тот к этому моменту
@@ -120,10 +166,10 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
                         ?: "отсутствует"
                     val details = group.joinToString { "${it.detailClassifierCode} (Loodsman id ${it.detailLoodsmanId})" }
                     println(
-                        "Материал пропущен (нет данных для создания): обозначение по чертежу=" +
+                        "$label: материал пропущен (нет данных для создания): обозначение по чертежу=" +
                             "'$designation', детали: $details"
                     )
-                    return@async
+                    return@async emptyList<Pair<Int, Int>>()
                 }
 
                 // Материал резолвится ОДИН раз на всю группу (по общему коду классификатора), но
@@ -136,23 +182,28 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
                     detailsNotLinked.addAndGet(unlinkable.size)
                     val details = unlinkable.joinToString { "${it.detailClassifierCode} (Loodsman id ${it.detailLoodsmanId})" }
                     println(
-                        "Материал (Loodsman id $materialLoodsmanId) не привязан к деталям без собственного " +
-                            "обозначения по чертежу (код классификатора совпал с другой деталью группы): $details"
+                        "$label: обозначение по чертежу пустое — поиск в ПОЛИНОМ/создание материала для этих " +
+                            "деталей не выполнялись: $details"
                     )
                 }
 
                 linkable.map { candidate ->
-                    async { linkMaterialToDetail(materialLoodsmanId, candidate, materials.detailLinkType, linksCreated, failures) }
-                }.awaitAll()
+                    async {
+                        val linked = linkMaterialToDetail(materialLoodsmanId, candidate, materials.detailLinkType, linksCreated, failures)
+                        if (linked) candidate.detailLoodsmanId to materialLoodsmanId else null
+                    }
+                }.awaitAll().filterNotNull()
             }
-        }.awaitAll()
+        }.awaitAll().flatten()
     }
 
     println(
-        "Материалы: уникальных ${candidatesByKey.size}, создано объектов ${materialsCreated.get()}, " +
+        "$label: уникальных ${candidatesByKey.size}, создано объектов ${materialsCreated.get()}, " +
             "связей с деталями ${linksCreated.get()}, пропущено групп ${skipped.get()}, " +
             "деталей без своего обозначения не привязано ${detailsNotLinked.get()}, ошибок ${failures.get()}"
     )
+
+    return linkedDetails.toMap()
 }
 
 private suspend fun MigrationContext.linkMaterialToDetail(
@@ -161,20 +212,137 @@ private suspend fun MigrationContext.linkMaterialToDetail(
     linkType: String,
     linksCreated: AtomicInteger,
     failures: AtomicInteger,
+): Boolean = try {
+    loodsmanClient.editObject.newLink(
+        sessionId,
+        NewLinkInputDto(
+            parentVersionId = candidate.detailLoodsmanId,
+            childVersionId = materialLoodsmanId,
+            linkType = linkType,
+        )
+    )
+    linksCreated.incrementAndGet()
+    true
+} catch (e: Exception) {
+    failures.incrementAndGet()
+    System.err.println("Не удалось связать материал ($materialLoodsmanId) с деталью (${candidate.detailLoodsmanId}): ${e.message}")
+    (e as? ResponseException)?.let {
+        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+    }
+    false
+}
+
+// Loodsman ObjectConfigurationGroupTypes: 0|1|2 — 2 задано пользователем напрямую (тип группы
+// замены "материал"), не вынесено в settings.json в отличие от названий группы/вариантов.
+private const val CHANGE_GROUP_TYPE_MATERIAL = 2
+
+// Группа замены "основной материал / материал-заменитель" — создаётся ТОЛЬКО для деталей,
+// оказавшихся в ОБЕИХ map'ах сразу (реально резолвился и связался и основной материал, и
+// заменитель). Деталь без заменителя (или без основного материала) группу не получает.
+//
+// ПОСЛЕДОВАТЕЛЬНО, без async/awaitAll — реальный инцидент: ObjectConfiguration/new-change-group-2
+// под конкурентными вызовами (даже на РАЗНЫЕ детали) уронил Postgres в deadlock (40P01) внутри
+// собственной хранимой процедуры Loodsman (dt_variants.prnewchangegroup -> ... -> блокировка
+// tuple в stlocks/stchanges) — в отличие от new-object/new-link (см.
+// "Конкурентность" в CLAUDE.md, там конкурентность подтверждена рабочей), этот эндпоинт свою
+// блокировку кладёт не построчно-независимо. Деталей с заменителем обычно немного (в отличие от
+// общего числа строк Excel), последовательность здесь не бутылочное горлышко.
+private suspend fun MigrationContext.createSubstituteChangeGroups(
+    mainLinked: Map<Int, Int>,
+    substituteLinked: Map<Int, Int>,
+    materials: MaterialsSettings,
+) {
+    val detailsWithBoth = substituteLinked.keys.filter { it in mainLinked }
+    if (detailsWithBoth.isEmpty()) {
+        println("Группы замены материала: деталей с основным материалом и заменителем нет, пропускаем")
+        return
+    }
+
+    val groupsCreated = AtomicInteger(0)
+    val variantsCreated = AtomicInteger(0)
+    val failures = AtomicInteger(0)
+
+    detailsWithBoth.forEach { detailLoodsmanId ->
+        createSubstituteChangeGroup(
+            detailLoodsmanId,
+            mainLinked.getValue(detailLoodsmanId),
+            substituteLinked.getValue(detailLoodsmanId),
+            materials,
+            groupsCreated,
+            variantsCreated,
+            failures,
+        )
+    }
+
+    println(
+        "Группы замены материала: деталей ${detailsWithBoth.size}, создано групп ${groupsCreated.get()}, " +
+            "создано вариантов ${variantsCreated.get()}, ошибок ${failures.get()}"
+    )
+}
+
+private suspend fun MigrationContext.createSubstituteChangeGroup(
+    detailLoodsmanId: Int,
+    mainMaterialLoodsmanId: Int,
+    substituteMaterialLoodsmanId: Int,
+    materials: MaterialsSettings,
+    groupsCreated: AtomicInteger,
+    variantsCreated: AtomicInteger,
+    failures: AtomicInteger,
 ) {
     try {
-        loodsmanClient.editObject.newLink(
+        val changeGroupId = loodsmanClient.objectConfiguration.newChangeGroup2(
             sessionId,
-            NewLinkInputDto(
-                parentVersionId = candidate.detailLoodsmanId,
-                childVersionId = materialLoodsmanId,
-                linkType = linkType,
+            NewChangeGroup2InputDto(
+                versionId = detailLoodsmanId,
+                changeGroupName = materials.changeGroupName,
+                groupType = CHANGE_GROUP_TYPE_MATERIAL,
+            )
+        ).asInt()
+        groupsCreated.incrementAndGet()
+
+        // Обе связи ("Изготавливается из ...") — под ОДНИМ родителем (деталью), поэтому один
+        // вызов get-linked-fast возвращает обе сразу; matching — по idVersion (Loodsman id
+        // созданного материала), не по product/version (см. docs/link-measure-unit-migration.md
+        // — там matching по product/version предлагался как рабочий вариант для чужого случая;
+        // здесь у нас уже есть точный Loodsman id обеих сторон, сверка по нему надёжнее).
+        val links = loodsmanClient.objectInfo.linkedFast(sessionId, detailLoodsmanId, materials.detailLinkType)
+        val mainLinkId = links.firstOrNull { it.idVersion == mainMaterialLoodsmanId }?.idLink
+        val substituteLinkId = links.firstOrNull { it.idVersion == substituteMaterialLoodsmanId }?.idLink
+
+        if (mainLinkId == null || substituteLinkId == null) {
+            failures.incrementAndGet()
+            System.err.println(
+                "Группа замены (деталь $detailLoodsmanId): не найдена связь через get-linked-fast " +
+                    "(основной материал $mainMaterialLoodsmanId -> idLink=$mainLinkId, " +
+                    "заменитель $substituteMaterialLoodsmanId -> idLink=$substituteLinkId)"
+            )
+            return
+        }
+
+        loodsmanClient.objectConfiguration.newChangeVariant2(
+            sessionId,
+            NewChangeVariant2InputDto(
+                changeGroupId = changeGroupId,
+                changeVariantName = materials.mainMaterialVariantName,
+                linkFirstVariantId = mainLinkId,
+                isBasic = true,
             )
         )
-        linksCreated.incrementAndGet()
+        variantsCreated.incrementAndGet()
+
+        loodsmanClient.objectConfiguration.newChangeVariant2(
+            sessionId,
+            NewChangeVariant2InputDto(
+                changeGroupId = changeGroupId,
+                changeVariantName = materials.substituteMaterialVariantName,
+                linkFirstVariantId = substituteLinkId,
+                isBasic = false,
+            )
+        )
+        variantsCreated.incrementAndGet()
     } catch (e: Exception) {
         failures.incrementAndGet()
-        System.err.println("Не удалось связать материал ($materialLoodsmanId) с деталью (${candidate.detailLoodsmanId}): ${e.message}")
+        System.err.println("Не удалось создать группу замены материала (деталь $detailLoodsmanId): ${e.message}")
         (e as? ResponseException)?.let {
             System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
         }
@@ -314,6 +482,179 @@ private suspend fun MigrationContext.resolvePropertyDefinitionByAbsoluteCode(abs
 // бутстрапа property-definition (concept/get-by-concept-appointer на первую группу каталога
 // справочника "Коды" — этот эндпоинт всегда работал, ломались только code/id-résolв свойств).
 private const val ELEMENT_CONCEPT_NAME = "Элемент классификации"
+
+// Постобработка после runLinksMigration(): bomMaterialCandidates собраны там для родителей,
+// отмеченных DS (mapping.bomMaterials), у которых child листа "Связи" не резолвился ни в один
+// созданный объект. В отличие от runMaterialsMigration() (сортаментный поток, materials.*): здесь
+// НЕТ сравнения найденного элемента с обозначением по чертежу (проверка неприменима — обозначения
+// у нас просто нет) и НЕТ фолбэка на создание нового элемента классификатора в ПОЛИНОМ — если код
+// классификатора не нашёл совпадения, связь пропускается (лог + счётчик), это осознанное решение,
+// не ошибка. Связь создаётся тем же типом, что и обычный BOM ("Состоит из ..." — linksSheet.linkType),
+// а не materials.detailLinkType.
+suspend fun MigrationContext.runBomMaterialsMigration() {
+    try {
+        runBomMaterialsMigrationInternal()
+    } catch (e: ResponseException) {
+        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        throw e
+    }
+}
+
+private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
+    if (bomMaterialCandidates.isEmpty()) {
+        println("Материалы по КД (DS): кандидатов нет, пропускаем")
+        return
+    }
+
+    val materials = settings.mapping.materials
+    val classifierCodeProperty = materials.classifierCodePropertyId
+        ?: resolvePropertyDefinitionByAbsoluteCode(materials.classifierCodePropertyAbsoluteCode)
+    val searchScope = resolveSearchScope()
+
+    // Свой кэш "Полином-элемент -> Loodsman-id", отдельный от runMaterialsMigration() — разные
+    // dedupKey (коды классификатора) здесь тоже могут разрешиться в один и тот же элемент Полином.
+    val elementCache = mutableMapOf<Pair<Int, Int>, Int>()
+    val elementCacheMutex = Mutex()
+
+    val candidatesByCode = bomMaterialCandidates.groupBy { it.classifierCode }
+
+    val materialsCreated = AtomicInteger(0)
+    val linksCreated = AtomicInteger(0)
+    val notFound = AtomicInteger(0)
+    val failures = AtomicInteger(0)
+    val unitsNotFound = AtomicInteger(0)
+    val unitsCollision = AtomicInteger(0)
+    val unitsAssigned = AtomicInteger(0)
+
+    // Тот же паттерн, что и в runLinksMigration: резолв уникальных обозначений один раз (не по
+    // одной связи на обозначение), тот же resolveUnitId (см. MigrationEngine.kt).
+    val distinctDesignations = bomMaterialCandidates.mapNotNull { it.unitDesignation }.toSet()
+    val unitByDesignation = coroutineScope {
+        distinctDesignations.map { designation ->
+            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision) }
+        }.awaitAll()
+    }.toMap()
+
+    coroutineScope {
+        candidatesByCode.entries.map { (classifierCode, group) ->
+            async {
+                val materialLoodsmanId = try {
+                    resolveBomMaterialByClassifierCode(
+                        classifierCode,
+                        classifierCodeProperty,
+                        searchScope,
+                        elementCache,
+                        elementCacheMutex,
+                        materialsCreated,
+                    )
+                } catch (e: Exception) {
+                    failures.incrementAndGet()
+                    System.err.println(
+                        "Не удалось создать материал по КД (DS) для кода классификатора '$classifierCode': ${e.message}"
+                    )
+                    return@async
+                }
+                if (materialLoodsmanId == null) {
+                    notFound.incrementAndGet()
+                    println("Материал по КД (DS) пропущен: код классификатора '$classifierCode' не найден в ПОЛИНОМ")
+                    return@async
+                }
+                group.map { candidate ->
+                    async {
+                        val unitId = candidate.unitDesignation?.let { unitByDesignation[it] }
+                        if (unitId != null) unitsAssigned.incrementAndGet()
+                        linkBomMaterialToParent(
+                            materialLoodsmanId,
+                            candidate.parentLoodsmanId,
+                            candidate.quantity,
+                            unitId,
+                            settings.mapping.linksSheet.linkType,
+                            linksCreated,
+                            failures,
+                        )
+                    }
+                }.awaitAll()
+            }
+        }.awaitAll()
+    }
+
+    println(
+        "Материалы по КД (DS): уникальных кодов ${candidatesByCode.size}, создано объектов ${materialsCreated.get()}, " +
+            "связей ${linksCreated.get()}, не найдено в ПОЛИНОМ ${notFound.get()}, ошибок ${failures.get()}, " +
+            "единиц измерения назначено ${unitsAssigned.get()}, обозначение не найдено ${unitsNotFound.get()}, " +
+            "коллизий обозначения ${unitsCollision.get()}"
+    )
+}
+
+private suspend fun MigrationContext.linkBomMaterialToParent(
+    materialLoodsmanId: Int,
+    parentLoodsmanId: Int,
+    quantity: Double,
+    unitId: String?,
+    linkType: String,
+    linksCreated: AtomicInteger,
+    failures: AtomicInteger,
+) {
+    try {
+        loodsmanClient.editObject.newLink(
+            sessionId,
+            NewLinkInputDto(
+                parentVersionId = parentLoodsmanId,
+                childVersionId = materialLoodsmanId,
+                linkType = linkType,
+                minQuantity = quantity,
+                maxQuantity = quantity,
+                unitId = unitId,
+            )
+        )
+        linksCreated.incrementAndGet()
+    } catch (e: Exception) {
+        failures.incrementAndGet()
+        System.err.println(
+            "Не удалось связать материал по КД ($materialLoodsmanId) с объектом ($parentLoodsmanId): ${e.message}"
+        )
+        (e as? ResponseException)?.let {
+            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+        }
+    }
+}
+
+// Только поиск по коду классификатора (шаг 1-2 из resolveOrCreateMaterial/findElementByClassifierCode,
+// БЕЗ сравнения обозначения и БЕЗ фолбэка на создание элемента в ПОЛИНОМ) — возвращает null, если
+// совпадения нет.
+private suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
+    classifierCode: String,
+    classifierCodeProperty: IdentifiableObjectDto,
+    searchScope: IdentifiableObjectDto,
+    elementCache: MutableMap<Pair<Int, Int>, Int>,
+    elementCacheMutex: Mutex,
+    materialsCreated: AtomicInteger,
+): Int? {
+    val found = polynomClient.search.searchByStringProperty(
+        accessToken = polynomAccessToken,
+        scope = searchScope,
+        propertyDefinition = classifierCodeProperty,
+        value = classifierCode,
+    ).firstOrNull() ?: return null
+
+    val materials = settings.mapping.materials
+    val key = found.objectId to found.typeId
+    return elementCacheMutex.withLock {
+        elementCache[key]?.let { return@withLock it }
+
+        val location = polynomClient.classification.getLocation(
+            polynomAccessToken,
+            IdentifiableObjectDto(found.objectId, found.typeId)
+        )
+        val created = loodsmanClient.editObject.createBoObject(
+            sessionId,
+            CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)
+        )
+        elementCache[key] = created
+        materialsCreated.incrementAndGet()
+        created
+    }
+}
 
 private suspend fun MigrationContext.resolveSearchScope(): IdentifiableObjectDto {
     val referenceName = settings.mapping.materials.codesReferenceName

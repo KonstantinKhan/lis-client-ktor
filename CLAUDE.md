@@ -21,8 +21,9 @@ REST API. Правила миграции (какие строки каким т
 ## Карта пакетов
 
 - `client/` — Ktor HTTP-клиент (`Client.kt`) + суб-клиенты `Login`/`EditObject`/`ConfMetaData`/
-  `CheckOut`/`ObjectInfo`. Все HTTP-вызовы идут через общий `Client.requestGate: Semaphore` —
-  единственная точка контроля нагрузки на Loodsman (см. "Конкурентность" ниже).
+  `CheckOut`/`ObjectInfo`/`Measure`/`ObjectConfiguration`. Все HTTP-вызовы идут через общий
+  `Client.requestGate: Semaphore` — единственная точка контроля нагрузки на Loodsman (см.
+  "Конкурентность" ниже).
 - `domain/` — классы-зеркала схемы `settings.json` (`Settings`, `Mapping`, `MappingElement`,
   `Conditions`, `Rule`, `Attribute`, `ReplaceRule`, `Connection`, `ObjectsSheet`, `LinksSheet`) +
   `MigrationContext` — общее mutable-состояние REPL-сессии (сквозной контекст для всего pipeline).
@@ -32,7 +33,10 @@ REST API. Правила миграции (какие строки каким т
 - `migration/` — движок правил миграции: `RuleEvaluators` (реестр интерпретаторов `Rule.type`),
   `ConditionsEvaluator` (матчинг `single`/`or`/`and`), `AttributeResolver`+`ReplaceRuleStrategies`
   (резолв значений атрибутов), `MigrationEngine.kt` (`runObjectsMigration`/`runLinksMigration` —
-  собственно оркестрация чтения Excel → создания объектов → создания связей).
+  собственно оркестрация чтения Excel → создания объектов → создания связей), `MaterialsEngine.kt`
+  (`runMaterialsMigration` — сортаментные материалы через ПОЛИНОМ, включая заменители, общий
+  пайплайн `processMaterialCandidates`, см. ниже; `runBomMaterialsMigration` — материалы по КД
+  для DS-объектов, только по коду классификатора, без ПОЛИНОМ-фолбэка, см. ниже).
 - `excel/` — `ExcelSaxParser` — потоковый (SAX, не DOM) парсер xlsx, отдаёт `Flow<ExcelRow>` с
   опциональным фильтром по имени листа.
 - `repl/` — интерактивная консоль (`ReplConsole`), команды через `ICommand` (`suspend fun execute`),
@@ -83,7 +87,10 @@ object SomePipeline : ICorExec<MigrationContext> by pipeline<MigrationContext>({
     "source": { "type": "xlsx", "path": "..." },
     "objectsSheet": { "name": "Объекты", "headersRowIndex": 1 },
     "linksSheet": { "name": "Связи", "headersRowIndex": 1, "parentColumnIndex": 1,
-                     "childColumnIndex": 2, "linkType": "Состоит из ..." },
+                     "childColumnIndex": 2, "linkType": "Состоит из ...",
+                     "quantityColumn": "конструкторское количество",
+                     "unitColumn": "единица измерения",
+                     "unitExcludeValues": ["компл", "-"] },
     "identifierColumn": "код классификатора",
     "attributes": [
       { "attrColumn": "наименование", "loodsmanAttr": "Наименование" },
@@ -94,7 +101,11 @@ object SomePipeline : ICorExec<MigrationContext> by pipeline<MigrationContext>({
       { "target": "Папка", "source": "обозначение", "state": "Папка для чтения",
         "isProject": false, "linkToRoot": true,
         "conditions": { "single": {"type":"check","column":"...","is":"..."}, "or": [], "and": [] } }
-    ]
+    ],
+    "bomMaterials": { "specificationConditions": { "single": {"type":"check","column":"конструкторская спецификация","is":"DS"},
+                                                    "or": [], "and": [] },
+                      "materialConditions": { "single": {"type":"check","column":"Раздел спецификации","is":"Материалы"},
+                                              "or": [], "and": [] } }
   }
 }
 ```
@@ -123,6 +134,101 @@ object SomePipeline : ICorExec<MigrationContext> by pipeline<MigrationContext>({
 - `identifiers` (используется `runLinksMigration` для резолва листа "Связи" по `classifierId`)
   содержит ТОЛЬКО не-проектные (`isProject == false`) объекты — проектные папки исключены из
   структуры BOM намеренно, они не участвуют в связях по листу "Связи".
+- `linksSheet.unitColumn`/`unitExcludeValues` — единица измерения (`Unit`/`Measure`) связи
+  "Состоит из ...". `unitColumn` — имя столбца Excel с обозначением единицы (ищется по имени,
+  как `quantityColumn`, не по индексу); `unitExcludeValues` — список значений (например
+  `"компл"`, `"-"`), при которых unit связи не трогается вообще (остаётся дефолт API).
+  `runLinksMigration` резолвит уникальные обозначения (не по одному на связь — designation
+  обычно повторяется в сотнях строк) через `Client.measure.unitsByDesignation`, тем же
+  паттерном конкурентности, что и остальной движок (см. "Конкурентность" ниже). Если
+  `units-by-designation` вернул 0 или >1 результат (обозначение не найдено или неоднозначно
+  между разными величинами) — unit для соответствующих связей не проставляется, случай
+  логируется и считается (`unitsNotFound`/`unitsCollision` в summary), миграция продолжается.
+- `mapping.bomMaterials` (`specificationConditions`/`materialConditions`) — признак "у объекта
+  есть собственная конструкторская спецификация" (DS). Обе — та же `Conditions`/
+  `ConditionsEvaluator`, что и `mapping.types[].conditions`: `ConditionsEvaluator.matches`
+  работает по `RowView` независимо от листа-источника. **Обе проверяются на строках листа
+  "Объекты"** — лист "Связи" в этом проекте содержит только коды классификаторов и количества,
+  раздела спецификации там нет вообще (проверено вживую — см. инцидент ниже).
+  - `specificationConditions` — на строке САМОГО объекта (`processObjectRow`), например
+    `{"single":{"type":"check","column":"конструкторская спецификация","is":"DS"}}`.
+    **Не заданные условия (`isConfigured` == false) выключают фичу целиком** — специально
+    проверяется через `ConditionsEvaluator.isConfigured`, а не голый `matches(...)`: пустая
+    `Conditions()` для `matches` означает "всегда true" (годится для `types[]`, где элемент списка
+    уже сам по себе opt-in), но здесь означала бы "любой объект — DS", что не то, что нужно по
+    умолчанию.
+  - `materialConditions` — на строке КАЖДОГО child'а (тоже лист "Объекты"), например
+    `{"single":{"type":"check","column":"Раздел спецификации","is":"Материалы"}}`. Строка раздела
+    "Материалы" обычно не матчит ни одно `mapping.types[]` правило (нет типа для этого раздела) и
+    поэтому не становится объектом — но её `classifierId` всё равно собирается в
+    `processObjectRow` ДО early-return на пустых `matches` (иначе строка никогда не попадёт в
+    `bomMaterialRowClassifierIds`) и кладётся в `MigrationContext.bomMaterialRowClassifierIds`.
+    Пустая `Conditions()` здесь намеренно "всегда true" (доп. фильтр поверх
+    `specificationConditions`, а не самостоятельный гейт).
+  - **Реальный инцидент**: `materialConditions` изначально проверялся на строке листа "Связи"
+    (по аналогии с `linksSheet.unitColumn`/`quantityColumn`) — казалось логичным, но на практике
+    на "Связи" такого столбца не оказалось вообще, из-за чего условие никогда не проходило и ни
+    один материал не создавался (кандидатов всегда было 0). Если понадобится проверять что-то по
+    самой строке "Связи" — придётся заново подтвердить, что нужный столбец там реально есть,
+    а не просто предположить это по аналогии с другими полями `linksSheet`.
+
+  Если объект прошёл `specificationConditions`, `runLinksMigration` для его нерезолвленных
+  child-строк листа "Связи" (child — валидный `Long`, но не совпал ни с одним созданным объектом)
+  сверяет `childClassifierId` с `bomMaterialRowClassifierIds`; при совпадении трактует его как код
+  классификатора "Материала по КД" и откладывает в `MigrationContext.bomMaterialCandidates`, а не
+  молча теряет связь, как обычно (см. `processObjectRow`/`runLinksMigration` в
+  `migration/MigrationEngine.kt`). Если `childColumnIndex` вообще не парсится как `Long`
+  (адресация материала по обозначению/наименованию, а не по коду классификатора, — не
+  подтверждённый вживую, но правдоподобный случай) — `bomMaterialRowClassifierIds` сверить не с
+  чем, используется только признак DS родителя. Обработка — `runBomMaterialsMigration()`
+  (`migration/MaterialsEngine.kt`), отдельный шаг pipeline (`Status.MATERIALS_MIGRATED →
+  BOM_MATERIALS_MIGRATED`) ПОСЛЕ сортаментного `runMaterialsMigration`: ищет элемент в ПОЛИНОМ
+  только по коду классификатора (переиспользует
+  `classifierCodePropertyAbsoluteCode`/`codesReferenceName`/`classifierCodePropertyId` из
+  `materials`), БЕЗ сравнения обозначения по чертежу и БЕЗ фолбэка на создание нового элемента в
+  ПОЛИНОМ (если код не нашёл совпадения — связь пропускается, лог + счётчик, не ошибка). Найденный
+  элемент материализуется в Loodsman тем же `createBoObject`, что и в сортаментном потоке
+  (`materials.materialTarget`), связь — `linksSheet.linkType` ("Состоит из ..."), НЕ
+  `materials.detailLinkType`. `BomMaterialCandidate` несёт СВОИ `quantity`/`unitDesignation`,
+  прочитанные с ТОЙ ЖЕ строки "Связи" (`linksSheet.quantityColumn`/`unitColumn`) — реальный
+  инцидент: изначально эти поля не собирались вовсе, и все связи материал↔родитель через этот
+  путь создавались с дефолтом API (`1.0`, без unit), никак не выделяясь среди обычных связей.
+  `runBomMaterialsMigrationInternal` резолвит unit те же уникальные обозначения через
+  `resolveUnitId` (вынесен из `private` в `MigrationEngine.kt` специально для переиспользования
+  здесь) — тот же паттерн, что в `runLinksMigration`.
+- `materials.substituteDrawingDesignationColumn` — материал-заменитель (столбец "Материал
+  заменитель по чертежу" на листе "Объекты"), второй независимый кандидат материала на ту же
+  деталь. Разделяет с основным материалом ВСЁ остальное (`classifierCodeColumn`, `hierarchy`,
+  `materialTarget`/`materialState`, `detailLinkType` — решение пользователя: заменитель линкуется
+  тем же типом связи "Изготавливается из ..."), различается только колонка обозначения по
+  чертежу. Собирается в `processObjectRow` в ОТДЕЛЬНЫЙ список
+  (`MigrationContext.materialSubstituteCandidates`, не в `materialCandidates`) — если бы основной
+  и заменитель одной детали (у них общий `classifierCode`, см. решение пользователя) попали в
+  один `candidatesByKey`, группа дедупликации схлопнула бы их в один резолв и связался бы только
+  один из двух. `MaterialsEngine.processMaterialCandidates` — общий пайплайн резолва/создания/
+  линковки, вызывается дважды (для `materialCandidates` и `materialSubstituteCandidates`) с
+  ОБЩИМ `elementCache`/мьютексами (если один и тот же элемент Полином окажется и чьим-то основным
+  материалом, и чьим-то заменителем — нужен ровно один Loodsman-объект на него). `""` (дефолт) —
+  заменители не собираются вовсе.
+- **Группа замены материала** (`ObjectConfiguration/new-change-group-2` + `new-change-variant-2`,
+  `client/ObjectConfiguration.kt`, `MaterialsEngine.createSubstituteChangeGroups`/
+  `createSubstituteChangeGroup`) — создаётся ТОЛЬКО для деталей, у которых реально резолвился и
+  связался И основной материал, И заменитель (`mainLinked`/`substituteLinked` — карты
+  `detailLoodsmanId -> materialLoodsmanId`, которые `processMaterialCandidates` теперь возвращает
+  вместо `Unit`, пересечение по ключу детали). Деталь без заменителя (пустая ячейка
+  `substituteDrawingDesignationColumn`, отфильтровано ещё в `processObjectRow`) группу не получает.
+  Порядок вызовов на деталь: `new-change-group-2` (`versionId`=деталь, `changeGroupName`=
+  `materials.changeGroupName`, `groupType`=2 — жёстко в коде, `CHANGE_GROUP_TYPE_MATERIAL`, не
+  вынесено в settings) → `ObjectInfo.linkedFast(detailLoodsmanId, materials.detailLinkType)` ОДИН
+  раз (обе связи "Изготавливается из ..." — основной материал и заменитель — под одним родителем,
+  поэтому один вызов возвращает обе) → сопоставление нужного `idLink` по `idVersion ==
+  <Loodsman id материала>` (не по `product`/`version`, как в
+  `docs/link-measure-unit-migration.md` — там predлагался этот путь для чужого случая; здесь уже
+  есть точный Loodsman id обеих сторон, сверка по нему надёжнее) → два `new-change-variant-2`
+  (`changeGroupId` из первого вызова, `changeVariantName`=`materials.mainMaterialVariantName`/
+  `substituteMaterialVariantName`, `linkFirstVariantId`=найденный `idLink`, `isBasic`=`true`/
+  `false`). Если `idLink` для одной из сторон не нашёлся — вся группа для этой детали пропускается
+  с логом (не полу-созданная группа с одним вариантом).
 
 ## Конкурентность
 
@@ -132,6 +238,14 @@ Semaphore(connection.maxConcurrentRequests)`, которым обёрнут ка
 строк Excel (матчинг условий, сборка DTO) — дешёвая, поэтому в `MigrationEngine.kt` она просто
 запускается вся сразу (`rows.map { async { ... } }` внутри `coroutineScope`, `awaitAll()`), без
 собственного лимита — корутины большую часть времени просто ждут permit семафора.
+
+**Исключение, подтверждённое вживую**: `ObjectConfiguration/new-change-group-2` НЕ безопасен для
+конкурентных вызовов даже на РАЗНЫЕ объекты — конкурентный запуск уронил Postgres в deadlock
+(`40P01`) внутри собственной хранимой процедуры Loodsman (`dt_variants.prnewchangegroup` →
+блокировка tuple в `stlocks`/`stchanges`), в отличие от `new-object`/`new-link`, чья конкурентность
+подтверждена рабочей (см. ниже). `MaterialsEngine.createSubstituteChangeGroups` поэтому вызывает
+`createSubstituteChangeGroup` **последовательно** (`forEach`, без `async`/`awaitAll`) — если
+понадобится ускорить, сначала проверить на реальном стенде, не вернётся ли deadlock.
 
 **Антипаттерн, которого нужно избегать в этом коде** (реальный инцидент, не гипотетический):
 `flatMapMerge` поверх `channelFlow`, который внутри блокирующе (`trySendBlocking`) кормит данные
@@ -175,8 +289,9 @@ Semaphore(connection.maxConcurrentRequests)`, которым обёрнут ка
 
 Внутри `LoodsmanInit`/`MigrationPipeline` шаги гейтятся отдельным, более гранулярным
 `MigrationContext.status: Status` (`domain/Status.kt`): `START → EXIST_CONFIG/NOT_CONFIG → LOGIN →
-LOGIN_SUCCESS → CHECKOUT → CONNECT_CHECKOUT → OBJECTS_MIGRATED → LINKS_MIGRATED`. Это два разных
-enum на разных уровнях детализации, не путать.
+LOGIN_SUCCESS → CHECKOUT → CONNECT_CHECKOUT → OBJECTS_MIGRATED → LINKS_MIGRATED →
+MATERIALS_MIGRATED → BOM_MATERIALS_MIGRATED`. Это два разных enum на разных уровнях детализации,
+не путать.
 
 ## Как добавить
 
@@ -204,3 +319,14 @@ enum на разных уровнях детализации, не путать.
   уровне pipeline-шагов, а не строк, потребуется сначала это починить.
 - `login()` требует интерактивной консоли, не работает под `gradlew run`/CI — только через
   `installDist`-бинарник, запущенный из настоящего терминала.
+- `EditObject.upLink` (`up-link`) построен и рабочий, но НЕ вызывается из `MigrationEngine` —
+  миграция только создаёт связи (`newLink`, unit передаётся сразу через `NewLinkInputDto.unitId`),
+  никогда не правит уже существующие. Задел под будущий сценарий донастройки unit'ов на уже
+  смигрированном дереве (см. `docs/link-measure-unit-migration.md`). При использовании `upLink` —
+  `delLink` ОБЯЗАТЕЛЬНО `false`, иначе связь удаляется.
+  (`ObjectInfo.linkedFast`, построенный тогда же, с тех пор получил реальный вызов — см.
+  `MaterialsEngine.createSubstituteChangeGroup` ниже.)
+- `MetaData/get-measure-list-for-link` (опциональный safety-check из
+  `docs/link-measure-unit-migration.md` — проверка, что величина, пришедшая с `Unit`, вообще
+  допустима для пары типов + типа связи) не реализован вообще — сознательно отложено, не
+  блокирует основной поток резолва единиц измерения.

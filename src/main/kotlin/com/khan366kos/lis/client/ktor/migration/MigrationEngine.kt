@@ -1,5 +1,6 @@
 package com.khan366kos.lis.client.ktor.migration
 
+import com.khan366kos.lis.client.ktor.domain.BomMaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.Identifier
 import com.khan366kos.lis.client.ktor.domain.MappingElement
 import com.khan366kos.lis.client.ktor.domain.MaterialCandidate
@@ -40,17 +41,26 @@ suspend fun MigrationContext.runObjectsMigration() {
     }
 
     // Слияние в общие списки идёт последовательно, после awaitAll() — сами row-корутины
-    // ничего не пишут в identifiers/materialCandidates напрямую, чтобы не гонять запись в
-    // MutableList из нескольких потоков одновременно.
+    // ничего не пишут в identifiers/materialCandidates/bomMaterialSpecClassifierIds/
+    // bomMaterialRowClassifierIds напрямую, чтобы не гонять запись в MutableList/MutableSet из
+    // нескольких потоков одновременно.
     val created = results.flatMap { it.identifiers }
     identifiers.addAll(created)
     materialCandidates.addAll(results.flatMap { it.materialCandidates })
+    materialSubstituteCandidates.addAll(results.flatMap { it.materialSubstituteCandidates })
+    bomMaterialSpecClassifierIds.addAll(results.mapNotNull { it.bomMaterialClassifierId })
+    bomMaterialRowClassifierIds.addAll(results.mapNotNull { it.bomMaterialRowClassifierId })
 
     println(
         "Объекты: строк ${dataRows.size}, создано объектов ${objectsCreated.get()}, " +
-            "с привязкой к классификатору ${created.size}, ошибок ${rowsFailed.get()}"
+            "с привязкой к классификатору ${created.size}, ошибок ${rowsFailed.get()}, " +
+            "DS-объектов ${bomMaterialSpecClassifierIds.size}, " +
+            "строк раздела Материалы ${bomMaterialRowClassifierIds.size}"
     )
 }
+
+private data class LinkRowData(val quantity: Double?, val unitDesignation: String?)
+private data class LinkPair(val parent: Identifier, val child: Identifier, val quantity: Double, val unitDesignation: String?)
 
 suspend fun MigrationContext.runLinksMigration() {
     val linksSheet = settings.mapping.linksSheet
@@ -63,23 +73,56 @@ suspend fun MigrationContext.runLinksMigration() {
     val dataRows = rows.filter { it.rowIndex > linksSheet.headersRow }
 
     val linksFailed = AtomicInteger(0)
+    val unitsNotFound = AtomicInteger(0)
+    val unitsCollision = AtomicInteger(0)
+    val unitsAssigned = AtomicInteger(0)
 
-    // childId -> quantity; quantity == null значит колонка количества сконфигурирована, но
-    // значение в строке не прочиталось — такая пара позже отбрасывается, а не линкуется с 1.0.
-    val classifierLinks = mutableMapOf<Long, MutableMap<Long, Double?>>()
+    // identifiers уже полностью собраны (runObjectsMigration отработал раньше по pipeline) —
+    // можно резолвить classifierId -> Loodsman-объекты ДО прохода по строкам "Связи", это нужно
+    // ниже для childRaw, который не парсится как Long.
+    val elementsByClassifierId = identifiers.groupBy { it.classifierId }
+
+    // childId -> (quantity, unitDesignation); quantity == null значит колонка количества
+    // сконфигурирована, но значение в строке не прочиталось — такая пара позже отбрасывается,
+    // а не линкуется с 1.0. unitDesignation == null значит unit связи не трогается вообще
+    // (колонка не сконфигурирована / пустая ячейка / значение из unitExcludeValues).
+    val classifierLinks = mutableMapOf<Long, MutableMap<Long, LinkRowData>>()
     dataRows.forEach { row ->
         val parentId = row.cells.getOrNull(linksSheet.parentColumn)?.trim()?.toLongOrNull() ?: return@forEach
-        val childId = row.cells.getOrNull(linksSheet.childColumn)?.trim()?.toLongOrNull() ?: return@forEach
-        val quantity = resolveLinkQuantity(linksSheet.quantityColumn, RowView(headerMap, row.cells))
-        classifierLinks.getOrPut(parentId) { mutableMapOf() }[childId] = quantity
-    }
+        val childRaw = row.cells.getOrNull(linksSheet.childColumn)?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+        val rowView = RowView(headerMap, row.cells)
+        // Резолвятся ДО ветвления по childId — обеим веткам (обычный BOM-child и материал по КД
+        // через bomMaterials) нужны одни и те же quantity/unitDesignation с ЭТОЙ строки "Связи".
+        val quantity = resolveLinkQuantity(linksSheet.quantityColumn, rowView)
+        val unitDesignation = resolveLinkUnitDesignation(linksSheet.unitColumn, linksSheet.unitExcludeValues, rowView)
 
-    val elementsByClassifierId = identifiers.groupBy { it.classifierId }
+        val childId = childRaw.toLongOrNull()
+        if (childId == null) {
+            // childRaw не парсится как Long — не может ссылаться на classifierId листа "Объекты"
+            // (identifierColumn там всегда числовой), поэтому childClassifierId сверить с
+            // bomMaterialRowClassifierIds невозможно — используется только признак DS родителя.
+            if (parentId in bomMaterialSpecClassifierIds) {
+                if (quantity == null) {
+                    linksFailed.incrementAndGet()
+                    System.err.println(
+                        "Связь ($parentId -> $childRaw) пропущена: не удалось прочитать '${linksSheet.quantityColumn}'"
+                    )
+                } else {
+                    elementsByClassifierId[parentId]?.forEach { parent ->
+                        bomMaterialCandidates.add(BomMaterialCandidate(parent.loodsmanId, childRaw, quantity, unitDesignation))
+                    }
+                }
+            }
+            return@forEach
+        }
+
+        classifierLinks.getOrPut(parentId) { mutableMapOf() }[childId] = LinkRowData(quantity, unitDesignation)
+    }
 
     val linkPairs = classifierLinks.flatMap { (parentClassifierId, children) ->
         val parents = elementsByClassifierId[parentClassifierId] ?: return@flatMap emptyList()
-        children.flatMap { (childClassifierId, quantity) ->
-            if (quantity == null) {
+        children.flatMap { (childClassifierId, rowData) ->
+            if (rowData.quantity == null) {
                 linksFailed.incrementAndGet()
                 System.err.println(
                     "Связь ($parentClassifierId -> $childClassifierId) пропущена: " +
@@ -87,23 +130,91 @@ suspend fun MigrationContext.runLinksMigration() {
                 )
                 return@flatMap emptyList()
             }
-            val children2 = elementsByClassifierId[childClassifierId] ?: return@flatMap emptyList()
-            parents.flatMap { parent -> children2.map { child -> Triple(parent, child, quantity) } }
+            val children2 = elementsByClassifierId[childClassifierId]
+            if (children2 == null) {
+                // Child — валидный Long, но не резолвится ни в один созданный объект. Если
+                // родитель отмечен DS (bomMaterialSpecClassifierIds) И childClassifierId — это
+                // classifierId строки листа "Объекты" раздела "Материалы"
+                // (bomMaterialRowClassifierIds, см. mapping.bomMaterials.materialConditions),
+                // childClassifierId трактуется как код классификатора "Материала по КД" и
+                // откладывается на BomMaterialsEngine, а не молча теряется, как обычная
+                // нерезолвленная связь.
+                if (parentClassifierId in bomMaterialSpecClassifierIds && childClassifierId in bomMaterialRowClassifierIds) {
+                    parents.forEach { parent ->
+                        bomMaterialCandidates.add(
+                            BomMaterialCandidate(parent.loodsmanId, childClassifierId.toString(), rowData.quantity, rowData.unitDesignation)
+                        )
+                    }
+                }
+                return@flatMap emptyList()
+            }
+            parents.flatMap { parent ->
+                children2.map { child -> LinkPair(parent, child, rowData.quantity, rowData.unitDesignation) }
+            }
         }
     }
 
+    // Резолв идёт по уникальным обозначениям, а не по каждой связи — одно и то же обозначение
+    // ("шт", "м2") обычно повторяется в сотнях строк. Конкурентно, но без нового Semaphore —
+    // троттлинг только через Client.requestGate, как везде в движке.
+    val distinctDesignations = linkPairs.mapNotNull { it.unitDesignation }.toSet()
+    val unitByDesignation = coroutineScope {
+        distinctDesignations.map { designation ->
+            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision) }
+        }.awaitAll()
+    }.toMap()
+
     val linksCreated = coroutineScope {
-        linkPairs.map { (parent, child, quantity) ->
-            async { linkObjects(parent.loodsmanId, child.loodsmanId, linksSheet.linkType, linksFailed, quantity) }
+        linkPairs.map { pair ->
+            async {
+                val unitId = pair.unitDesignation?.let { unitByDesignation[it] }
+                if (unitId != null) unitsAssigned.incrementAndGet()
+                linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
+            }
         }.awaitAll()
     }.count { it }
 
-    println("Связи: строк ${dataRows.size}, пар для линковки ${linkPairs.size}, создано $linksCreated, ошибок ${linksFailed.get()}")
+    println(
+        "Связи: строк ${dataRows.size}, пар для линковки ${linkPairs.size}, создано $linksCreated, " +
+            "ошибок ${linksFailed.get()}, единиц измерения назначено ${unitsAssigned.get()}, " +
+            "обозначение не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}, " +
+            "кандидатов на Материал по КД ${bomMaterialCandidates.size}"
+    )
+}
+
+// Без private — переиспользуется в MaterialsEngine.kt (runBomMaterialsMigrationInternal) для
+// резолва unit'а материалов по КД, связанных под DS-объектами; тот же реестр Measure/
+// units-by-designation, та же логика "не найдено/коллизия -> null, лог, не ошибка".
+suspend fun MigrationContext.resolveUnitId(
+    designation: String,
+    unitsNotFound: AtomicInteger,
+    unitsCollision: AtomicInteger
+): String? {
+    val matches = loodsmanClient.measure.unitsByDesignation(sessionId, designation)
+    return when {
+        matches.isEmpty() -> {
+            unitsNotFound.incrementAndGet()
+            System.err.println("Единица измерения '$designation' не найдена в Measure/units-by-designation")
+            null
+        }
+        matches.size > 1 -> {
+            unitsCollision.incrementAndGet()
+            System.err.println(
+                "Обозначение '$designation' неоднозначно (${matches.size} совпадений в разных величинах) — " +
+                    "unit для этих связей не проставляется"
+            )
+            null
+        }
+        else -> matches.single().id
+    }
 }
 
 private data class ObjectRowResult(
     val identifiers: List<Identifier>,
     val materialCandidates: List<MaterialCandidate>,
+    val materialSubstituteCandidates: List<MaterialCandidate> = emptyList(),
+    val bomMaterialClassifierId: Long? = null,
+    val bomMaterialRowClassifierId: Long? = null,
 )
 
 private suspend fun MigrationContext.processObjectRow(
@@ -111,8 +222,24 @@ private suspend fun MigrationContext.processObjectRow(
     objectsCreated: AtomicInteger,
     rowsFailed: AtomicInteger
 ): ObjectRowResult {
+    val bomMaterials = settings.mapping.bomMaterials
+    val classifierIdForRow = row.value(settings.mapping.identifierColumn)?.toLongOrNull()
+
+    // Строка раздела "Материалы" (mapping.bomMaterials.materialConditions, например
+    // "Раздел спецификации"="Материалы") обычно НЕ матчит ни одно mapping.types[] правило (нет
+    // типа для этого раздела) и ниже вернётся без создания объекта — но её classifierId должен
+    // попасть в bomMaterialRowClassifierIds ДО этого early return, иначе runLinksMigration()
+    // никогда не увидит такие строки (см. BomMaterialsEngine).
+    val bomMaterialRowClassifierId = if (
+        classifierIdForRow != null &&
+        ConditionsEvaluator.isConfigured(bomMaterials.materialConditions) &&
+        ConditionsEvaluator.matches(bomMaterials.materialConditions, row)
+    ) classifierIdForRow else null
+
     val matches = settings.mapping.types.filter { ConditionsEvaluator.matches(it.conditions, row) }
-    if (matches.isEmpty()) return ObjectRowResult(emptyList(), emptyList())
+    if (matches.isEmpty()) {
+        return ObjectRowResult(emptyList(), emptyList(), bomMaterialRowClassifierId = bomMaterialRowClassifierId)
+    }
 
     val createdObjects = matches.mapNotNull { mappingElement ->
         val keyAttr = row.value(mappingElement.source) ?: return@mapNotNull null
@@ -140,8 +267,8 @@ private suspend fun MigrationContext.processObjectRow(
     // постобработки после того, как все строки Excel уже прочитаны (runMaterialsMigration) —
     // столбцы (1)/(2) читаются независимо от identifierColumn листа "Связи".
     val materials = settings.mapping.materials
-    val materialCandidatesForRow = createdObjects
-        .filter { (mappingElement, _) -> mappingElement.target in materials.appliesToTargets }
+    val materialTargetObjects = createdObjects.filter { (mappingElement, _) -> mappingElement.target in materials.appliesToTargets }
+    val materialCandidatesForRow = materialTargetObjects
         .map { (_, loodsmanId) ->
             MaterialCandidate(
                 detailLoodsmanId = loodsmanId,
@@ -151,16 +278,58 @@ private suspend fun MigrationContext.processObjectRow(
             )
         }
 
-    // В identifiers (резолв листа "Связи") попадают только не-папочные объекты — папка не должна
-    // становиться родителем в структуре, только организационным контейнером.
-    val classifierId = row.value(settings.mapping.identifierColumn)?.toLongOrNull()
-    val identifiersForRow = if (classifierId == null) {
+    // Материал-заменитель (mapping.materials.substituteDrawingDesignationColumn) — второй,
+    // независимый кандидат на ту же деталь: тот же classifierCode (см. решение пользователя —
+    // отдельного столбца кода для заменителя нет), но другое обозначение по чертежу. Кладётся в
+    // ОТДЕЛЬНЫЙ список (materialSubstituteCandidates), а не в materialCandidatesForRow — иначе
+    // основной и заменитель схлопнулись бы в одну группу дедупликации по общему classifierCode
+    // и связался бы только один из двух (см. MaterialsEngine.runMaterialsMigrationInternal).
+    // Ячейка должна быть непустой: classifierCode общий с основным материалом и почти всегда
+    // непустой сам по себе, поэтому дедупликация по нему (dedupKey в MaterialCandidate) НЕ спасает
+    // от фантомного кандидата на каждую деталь без заменителя — без явной проверки на пустую
+    // ячейку резолв (поиск в ПОЛИНОМ, лог "пропущен"/попытка создать) гонялся бы вообще на все
+    // детали подряд, а не только на те, где заменитель реально указан.
+    val substituteDesignation = materials.substituteDrawingDesignationColumn
+        .takeIf { it.isNotBlank() }
+        ?.let { row.value(it) }
+    val materialSubstituteCandidatesForRow = if (substituteDesignation == null) {
         emptyList()
     } else {
-        nonFolderObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierId) }
+        materialTargetObjects.map { (_, loodsmanId) ->
+            MaterialCandidate(
+                detailLoodsmanId = loodsmanId,
+                drawingDesignation = substituteDesignation,
+                classifierCode = row.value(materials.classifierCodeColumn),
+                detailClassifierCode = row.value(settings.mapping.identifierColumn),
+            )
+        }
     }
 
-    return ObjectRowResult(identifiersForRow, materialCandidatesForRow)
+    // В identifiers (резолв листа "Связи") попадают только не-папочные объекты — папка не должна
+    // становиться родителем в структуре, только организационным контейнером.
+    val identifiersForRow = if (classifierIdForRow == null) {
+        emptyList()
+    } else {
+        nonFolderObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierIdForRow) }
+    }
+
+    // Признак "у объекта есть собственная конструкторская спецификация" (DS) — см.
+    // mapping.bomMaterials в settings.json. specificationConditions не задан вовсе (isConfigured
+    // == false) значит фича выключена — Conditions() по умолчанию матчит любую строку, поэтому
+    // isConfigured проверяется явно, а не просто ConditionsEvaluator.matches(...).
+    val bomMaterialClassifierId = if (
+        classifierIdForRow != null &&
+        ConditionsEvaluator.isConfigured(bomMaterials.specificationConditions) &&
+        ConditionsEvaluator.matches(bomMaterials.specificationConditions, row)
+    ) classifierIdForRow else null
+
+    return ObjectRowResult(
+        identifiersForRow,
+        materialCandidatesForRow,
+        materialSubstituteCandidatesForRow,
+        bomMaterialClassifierId,
+        bomMaterialRowClassifierId,
+    )
 }
 
 private suspend fun MigrationContext.createLoodsmanObject(
@@ -208,7 +377,8 @@ private suspend fun MigrationContext.linkObjects(
     childLoodsmanId: Int,
     linkType: String,
     failCounter: AtomicInteger,
-    quantity: Double = 1.0
+    quantity: Double = 1.0,
+    unitId: String? = null
 ): Boolean = try {
     loodsmanClient.editObject.newLink(
         sessionId,
@@ -217,7 +387,8 @@ private suspend fun MigrationContext.linkObjects(
             childVersionId = childLoodsmanId,
             linkType = linkType,
             minQuantity = quantity,
-            maxQuantity = quantity
+            maxQuantity = quantity,
+            unitId = unitId
         )
     )
     true

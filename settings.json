@@ -27,7 +27,9 @@
       "parentColumnIndex": 1,
       "childColumnIndex": 2,
       "linkType": "Состоит из ...",
-      "quantityColumn": "конструкторское количество"
+      "quantityColumn": "конструкторское количество",
+      "unitColumn": "единица измерения входящего элемента в ДСЕ",
+      "unitExcludeValues": ["шт"]
     },
     "identifierColumn": "код классификатора",
     "attributes": [
@@ -154,6 +156,7 @@
     "materials": {
       "appliesToTargets": ["Деталь"],
       "drawingDesignationColumn": "Обозначение материала по чертежу",
+      "substituteDrawingDesignationColumn": "Материал заменитель по чертежу",
       "classifierCodeColumn": "Код классификатора объекта который записан в поле сортамента",
       "classifierCodePropertyAbsoluteCode": "c:ClassifData::pd:ClassifCode",
       "codesReferenceName": "Коды",
@@ -164,6 +167,29 @@
         "referenceName": "Конструкторские материалы",
         "catalogName": "Материалы по КД",
         "groupName": "Обозначение материала по чертежу"
+      },
+      "changeGroupName": "Замена материала",
+      "mainMaterialVariantName": "Основной материал",
+      "substituteMaterialVariantName": "Материал-заменитель"
+    },
+    "bomMaterials": {
+      "specificationConditions": {
+        "single": {
+          "type": "check",
+          "column": "конструкторская спецификация",
+          "is": "DS"
+        },
+        "or": [],
+        "and": []
+      },
+      "materialConditions": {
+        "single": {
+          "type": "check",
+          "column": "Раздел спецификации",
+          "is": "Материалы"
+        },
+        "or": [],
+        "and": []
       }
     }
   }
