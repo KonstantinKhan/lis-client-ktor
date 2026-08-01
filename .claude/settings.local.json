@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew build *)",
+      "Bash(python3 *)",
+      "Bash(awk '/<h3 id=\"IConceptPropertySource\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)",
+      "Bash(awk '/<h3/{c++} c<=1')",
+      "Bash(awk '/<h3 id=\"IPropertySource\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)",
+      "Bash(awk '/<h3 id=\"IEnumPropertyDefinition\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)"
+    ]
+  }
+}
