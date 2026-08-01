@@ -172,6 +172,13 @@
       "mainMaterialVariantName": "Основной материал",
       "substituteMaterialVariantName": "Материал-заменитель"
     },
+    "analogGroups": {
+      "analogGroupColumn": "группа аналогов",
+      "productionQuantityColumn": "производственное количество",
+      "productionQuantityWithoutMergeColumn": "количество производственное без объединения",
+      "changeGroupNameTemplate": "Группа аналогов {group}",
+      "variantNameTemplate": "Вариант {variant}"
+    },
     "bomMaterials": {
       "specificationConditions": {
         "single": {

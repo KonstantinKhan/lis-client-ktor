@@ -56,4 +56,14 @@ data class MigrationContext(
     // вообще — поэтому childClassifierId сверяется с этим набором, а не с полем на самой связи.
     val bomMaterialRowClassifierIds: MutableSet<Long> = mutableSetOf(),
     val bomMaterialCandidates: MutableList<BomMaterialCandidate> = mutableListOf(),
+    // Кандидаты на варианты групп замены "аналог" (лист "Связи", столбец "группа аналогов") —
+    // собираются синхронно в runLinksMigration() (flatMap classifierLinks -> linkPairs),
+    // обрабатываются AnalogGroupsEngine.runAnalogGroupsMigration(), вызываемым напрямую в конце
+    // runLinksMigration() — нужны idLink уже созданных структурных связей.
+    val analogGroupCandidates: MutableList<AnalogGroupCandidate> = mutableListOf(),
+    // Потомки групп аналогов, не резолвившиеся ни в один объект шага "Объекты" — собираются
+    // синхронно в runLinksMigration() (та же ветка, что и bomMaterialCandidates), обрабатываются
+    // AnalogGroupsEngine.runAnalogGroupsMigration() ДО построения самих групп (см. fallback через
+    // ПОЛИНОМ по коду классификатора).
+    val unresolvedAnalogGroupCandidates: MutableList<UnresolvedAnalogGroupCandidate> = mutableListOf(),
 )

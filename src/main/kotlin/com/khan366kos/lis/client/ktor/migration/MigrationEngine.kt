@@ -1,10 +1,12 @@
 package com.khan366kos.lis.client.ktor.migration
 
+import com.khan366kos.lis.client.ktor.domain.AnalogGroupCandidate
 import com.khan366kos.lis.client.ktor.domain.BomMaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.Identifier
 import com.khan366kos.lis.client.ktor.domain.MappingElement
 import com.khan366kos.lis.client.ktor.domain.MaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
+import com.khan366kos.lis.client.ktor.domain.UnresolvedAnalogGroupCandidate
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
@@ -59,8 +61,9 @@ suspend fun MigrationContext.runObjectsMigration() {
     )
 }
 
-private data class LinkRowData(val quantity: Double?, val unitDesignation: String?)
+private data class LinkRowData(val quantity: Double?, val unitDesignation: String?, val analogGroup: AnalogGroupInfo?)
 private data class LinkPair(val parent: Identifier, val child: Identifier, val quantity: Double, val unitDesignation: String?)
+private data class AnalogGroupInfo(val groupNumber: Int, val variantNumber: Int, val isBasic: Boolean)
 
 suspend fun MigrationContext.runLinksMigration() {
     val linksSheet = settings.mapping.linksSheet
@@ -76,6 +79,8 @@ suspend fun MigrationContext.runLinksMigration() {
     val unitsNotFound = AtomicInteger(0)
     val unitsCollision = AtomicInteger(0)
     val unitsAssigned = AtomicInteger(0)
+    val analogGroupsFailed = AtomicInteger(0)
+    val analogGroups = settings.mapping.analogGroups
 
     // identifiers уже полностью собраны (runObjectsMigration отработал раньше по pipeline) —
     // можно резолвить classifierId -> Loodsman-объекты ДО прохода по строкам "Связи", это нужно
@@ -116,7 +121,52 @@ suspend fun MigrationContext.runLinksMigration() {
             return@forEach
         }
 
-        classifierLinks.getOrPut(parentId) { mutableMapOf() }[childId] = LinkRowData(quantity, unitDesignation)
+        // Разбор "группа аналогов" только в этой ветке (childId — валидный Long) — по решению
+        // пользователя, объект варианта это тот же потомок, что уже резолвится через childColumn.
+        val analogGroupNumbers = resolveAnalogGroupNumbers(analogGroups.analogGroupColumn, rowView)
+        val analogGroup = analogGroupNumbers?.let { (groupNumber, variantNumber) ->
+            val production = resolveProductionQuantity(analogGroups.productionQuantityColumn, rowView)
+            val withoutMerge = resolveProductionQuantity(analogGroups.productionQuantityWithoutMergeColumn, rowView)
+            when {
+                production == null || withoutMerge == null -> {
+                    analogGroupsFailed.incrementAndGet()
+                    System.err.println(
+                        "Группа аналогов ($parentId -> $childId, группа $groupNumber-$variantNumber) пропущена: " +
+                            "не удалось прочитать '${analogGroups.productionQuantityColumn}' или " +
+                            "'${analogGroups.productionQuantityWithoutMergeColumn}'"
+                    )
+                    null
+                }
+                production != 0.0 && withoutMerge != 0.0 -> {
+                    println("Группа аналогов: строка $parentId -> $childId прочитана, группа $groupNumber-$variantNumber, isBasic=true")
+                    AnalogGroupInfo(groupNumber, variantNumber, isBasic = true)
+                }
+                production == 0.0 && withoutMerge == 0.0 -> {
+                    println("Группа аналогов: строка $parentId -> $childId прочитана, группа $groupNumber-$variantNumber, isBasic=false")
+                    AnalogGroupInfo(groupNumber, variantNumber, isBasic = false)
+                }
+                else -> {
+                    analogGroupsFailed.incrementAndGet()
+                    System.err.println(
+                        "Группа аналогов ($parentId -> $childId, группа $groupNumber-$variantNumber) пропущена: " +
+                            "несогласованные производственные количества " +
+                            "('${analogGroups.productionQuantityColumn}'=$production, " +
+                            "'${analogGroups.productionQuantityWithoutMergeColumn}'=$withoutMerge)"
+                    )
+                    null
+                }
+            }
+        }
+
+        // Реальный инцидент: тот же (parentId, childId) может встретиться в нескольких строках
+        // листа "Связи" (дублирующиеся строки BOM) — раньше последняя строка полностью
+        // перезаписывала запись, и если группа аналогов была указана в одной из более ранних
+        // строк, а более поздняя строка для той же пары эту колонку не заполняла, группа
+        // молча терялась. analogGroup теперь не перезаписывается на null последующей строкой —
+        // побеждает первое непустое значение, а не последняя строка.
+        val parentLinks = classifierLinks.getOrPut(parentId) { mutableMapOf() }
+        val mergedAnalogGroup = analogGroup ?: parentLinks[childId]?.analogGroup
+        parentLinks[childId] = LinkRowData(quantity, unitDesignation, mergedAnalogGroup)
     }
 
     val linkPairs = classifierLinks.flatMap { (parentClassifierId, children) ->
@@ -139,7 +189,39 @@ suspend fun MigrationContext.runLinksMigration() {
                 // childClassifierId трактуется как код классификатора "Материала по КД" и
                 // откладывается на BomMaterialsEngine, а не молча теряется, как обычная
                 // нерезолвленная связь.
-                if (parentClassifierId in bomMaterialSpecClassifierIds && childClassifierId in bomMaterialRowClassifierIds) {
+                if (rowData.analogGroup != null) {
+                    // Потомок группы аналогов не резолвился в структуре (например строка раздела
+                    // "Материалы", для которого нет типового правила types[]), но код
+                    // классификатора может быть найден в ПОЛИНОМ напрямую — откладывается на
+                    // AnalogGroupsEngine.resolveUnresolvedAnalogGroupCandidates, а не молча
+                    // теряется, как обычная нерезолвленная связь.
+                    //
+                    // ПРОВЕРЯЕТСЯ ПЕРВЫМ, до bomMaterialCandidates ниже: реальный инцидент — пара
+                    // одновременно проходила и как DS-материал (родитель в bomMaterialSpecClassifierIds
+                    // И потомок в bomMaterialRowClassifierIds), и как участник группы аналогов;
+                    // при else if бизнес-ветки считались взаимоисключающими, и группа аналогов
+                    // молча терялась — при этом объект создавался бы ЕЩЁ РАЗ (второй createBoObject
+                    // на тот же location в BomMaterialsEngine, конфликт по уникальному индексу).
+                    // Явная группа аналогов — более специфичный сигнал, приоритет за ней.
+                    val info = rowData.analogGroup
+                    println(
+                        "Группа аналогов: потомок $childClassifierId (родитель $parentClassifierId, группа " +
+                            "${info.groupNumber}-${info.variantNumber}) не резолвился в структуре — отложен на fallback"
+                    )
+                    parents.forEach { parent ->
+                        unresolvedAnalogGroupCandidates.add(
+                            UnresolvedAnalogGroupCandidate(
+                                parentLoodsmanId = parent.loodsmanId,
+                                childClassifierCode = childClassifierId.toString(),
+                                groupNumber = info.groupNumber,
+                                variantNumber = info.variantNumber,
+                                isBasic = info.isBasic,
+                                quantity = rowData.quantity,
+                                unitDesignation = rowData.unitDesignation,
+                            )
+                        )
+                    }
+                } else if (parentClassifierId in bomMaterialSpecClassifierIds && childClassifierId in bomMaterialRowClassifierIds) {
                     parents.forEach { parent ->
                         bomMaterialCandidates.add(
                             BomMaterialCandidate(parent.loodsmanId, childClassifierId.toString(), rowData.quantity, rowData.unitDesignation)
@@ -149,7 +231,24 @@ suspend fun MigrationContext.runLinksMigration() {
                 return@flatMap emptyList()
             }
             parents.flatMap { parent ->
-                children2.map { child -> LinkPair(parent, child, rowData.quantity, rowData.unitDesignation) }
+                children2.map { child ->
+                    rowData.analogGroup?.let { info ->
+                        println(
+                            "Группа аналогов: кандидат добавлен напрямую (родитель ${parent.loodsmanId}, потомок " +
+                                "${child.loodsmanId}, группа ${info.groupNumber}-${info.variantNumber}, isBasic=${info.isBasic})"
+                        )
+                        analogGroupCandidates.add(
+                            AnalogGroupCandidate(
+                                parentLoodsmanId = parent.loodsmanId,
+                                childLoodsmanId = child.loodsmanId,
+                                groupNumber = info.groupNumber,
+                                variantNumber = info.variantNumber,
+                                isBasic = info.isBasic,
+                            )
+                        )
+                    }
+                    LinkPair(parent, child, rowData.quantity, rowData.unitDesignation)
+                }
             }
         }
     }
@@ -178,8 +277,12 @@ suspend fun MigrationContext.runLinksMigration() {
         "Связи: строк ${dataRows.size}, пар для линковки ${linkPairs.size}, создано $linksCreated, " +
             "ошибок ${linksFailed.get()}, единиц измерения назначено ${unitsAssigned.get()}, " +
             "обозначение не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}, " +
-            "кандидатов на Материал по КД ${bomMaterialCandidates.size}"
+            "кандидатов на Материал по КД ${bomMaterialCandidates.size}, " +
+            "кандидатов на группы аналогов ${analogGroupCandidates.size}, " +
+            "ошибок групп аналогов ${analogGroupsFailed.get()}"
     )
+
+    runAnalogGroupsMigration()
 }
 
 // Без private — переиспользуется в MaterialsEngine.kt (runBomMaterialsMigrationInternal) для

@@ -470,7 +470,10 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
 
 // Резолв property-definition по полному коду (absoluteCode, берётся из админки Полином) —
 // один прямой запрос, без concept-скоупа и без предварительного поиска понятия/бутстрапа.
-private suspend fun MigrationContext.resolvePropertyDefinitionByAbsoluteCode(absoluteCode: String): IdentifiableObjectDto {
+// Без private — переиспользуется в AnalogGroupsEngine.kt (тот же смысл "код классификатора" для
+// fallback-создания недостающих объектов групп аналогов, см. решение пользователя не дублировать
+// настройку).
+suspend fun MigrationContext.resolvePropertyDefinitionByAbsoluteCode(absoluteCode: String): IdentifiableObjectDto {
     val source = polynomClient.concepts.getPropertySourceByAbsoluteCode(polynomAccessToken, absoluteCode)
     return IdentifiableObjectDto(source.objectId, source.typeId)
 }
@@ -656,7 +659,8 @@ private suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
     }
 }
 
-private suspend fun MigrationContext.resolveSearchScope(): IdentifiableObjectDto {
+// Без private — переиспользуется в AnalogGroupsEngine.kt, см. resolvePropertyDefinitionByAbsoluteCode выше.
+suspend fun MigrationContext.resolveSearchScope(): IdentifiableObjectDto {
     val referenceName = settings.mapping.materials.codesReferenceName
     val reference = polynomClient.classification.getAllReferences(polynomAccessToken)
         .firstOrNull { it.name == referenceName }
