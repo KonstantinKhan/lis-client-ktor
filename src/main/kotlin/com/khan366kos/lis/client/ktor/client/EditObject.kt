@@ -6,6 +6,8 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsOutputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesOutputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkInputDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -39,6 +41,16 @@ class EditObject(
     suspend fun setValues(sessionId: String, data: List<UpAttrValuesByIdsInputDto>): List<UpAttrValuesByIdsOutputDto> =
         requestGate.withPermit {
             client.postWithSession("EditObject/up-attr-values-by-ids", sessionId) {
+                setBody(data)
+            }.body()
+        }
+
+    // Атрибут СВЯЗИ (не объекта) — отдельный эндпоинт от up-attr-values-by-ids/setValues выше.
+    // linkId — id связи (idLink), возвращается newLink()/новым свойством ObjectInfo.linkedFast, не
+    // versionId объекта.
+    suspend fun setLinkAttrValues(sessionId: String, data: List<UpLinkAttrValuesInputDto>): List<UpLinkAttrValuesOutputDto> =
+        requestGate.withPermit {
+            client.postWithSession("EditObject/up-link-attr-values", sessionId) {
                 setBody(data)
             }.body()
         }

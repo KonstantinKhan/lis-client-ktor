@@ -3,6 +3,7 @@ package com.khan366kos.lis.client.ktor.migration
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.async
@@ -52,6 +53,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
     val materialsNotFound = AtomicInteger(0)
     val failures = AtomicInteger(0)
     val ratesAssigned = AtomicInteger(0)
+    val rateAttrFailures = AtomicInteger(0)
     val unitsNotFound = AtomicInteger(0)
     val unitsCollision = AtomicInteger(0)
 
@@ -112,21 +114,45 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         return@async
                     }
 
-                    val rateUnitId = candidate.rateUnitDesignation?.let { rateUnitById[it] }
-                    if (candidate.rate != null) ratesAssigned.incrementAndGet()
-
-                    loodsmanClient.editObject.newLink(
+                    val materialLinkId = loodsmanClient.editObject.newLink(
                         sessionId,
                         NewLinkInputDto(
                             parentVersionId = blankId,
                             childVersionId = materialId,
                             linkType = blanks.materialLinkType,
-                            minQuantity = candidate.rate ?: 1.0,
-                            maxQuantity = candidate.rate ?: 1.0,
-                            unitId = rateUnitId,
                         )
-                    )
+                    ).asInt()
                     materialLinksCreated.incrementAndGet()
+
+                    // Норма расхода — АТРИБУТ этой связи (величина "Масса" в схеме Loodsman), НЕ
+                    // встроенное minQuantity/maxQuantity/unitId связи — отдельный эндпоинт
+                    // EditObject/up-link-attr-values, по linkId только что созданной связи.
+                    if (blanks.rateAttribute.isNotBlank() && candidate.rate != null) {
+                        val rateUnitId = candidate.rateUnitDesignation?.let { rateUnitById[it] }
+                        val results = loodsmanClient.editObject.setLinkAttrValues(
+                            sessionId,
+                            listOf(
+                                UpLinkAttrValuesInputDto(
+                                    linkId = materialLinkId,
+                                    attributeName = blanks.rateAttribute,
+                                    attributeValue = candidate.rate.toString(),
+                                    unitGuid = rateUnitId,
+                                )
+                            )
+                        )
+                        val failed = results.filterNot { it.isSuccess }
+                        if (failed.isEmpty()) {
+                            ratesAssigned.incrementAndGet()
+                        } else {
+                            rateAttrFailures.incrementAndGet()
+                            failed.forEach {
+                                System.err.println(
+                                    "Заготовки: не удалось проставить '${blanks.rateAttribute}' на связи " +
+                                        "$materialLinkId: ${it.errorMessage}"
+                                )
+                            }
+                        }
+                    }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
                     System.err.println(
@@ -145,7 +171,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
             "связей деталь-заготовка ${blankLinksCreated.get()}, создано материалов ${materialsCreated.get()}, " +
             "связей заготовка-материал ${materialLinksCreated.get()}, " +
             "материал не найден в ПОЛИНОМ ${materialsNotFound.get()}, ошибок ${failures.get()}, " +
-            "норм расхода назначено ${ratesAssigned.get()}, обозначение единицы не найдено ${unitsNotFound.get()}, " +
-            "коллизий обозначения ${unitsCollision.get()}"
+            "норм расхода назначено ${ratesAssigned.get()}, ошибок назначения нормы ${rateAttrFailures.get()}, " +
+            "обозначение единицы не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}"
     )
 }

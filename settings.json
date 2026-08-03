@@ -416,7 +416,8 @@
       "materialTarget": "Материал основной",
       "materialLinkType": "Изготавливается из ...",
       "rateColumn": "Норма расхода",
-      "rateUnitColumn": "Единица измерения"
+      "rateUnitColumn": "Единица измерения",
+      "rateAttribute": "Норма расхода"
     }
   }
 }
