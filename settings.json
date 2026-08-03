@@ -281,6 +281,90 @@
             }
           ]
         }
+      },
+      {
+        "target": "Стандартное изделие",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "resolveViaPolynom": true,
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Стандартные изделия"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "дет"
+            },
+            {
+              "type": "empty",
+              "column": "Тип объекта"
+            }
+          ]
+        }
+      },
+      {
+        "target": "Стандартное изделие",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "resolveViaPolynom": true,
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Стандартные изделия"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "покуп"
+            },
+            {
+              "type": "empty",
+              "column": "Тип объекта"
+            }
+          ]
+        }
+      },
+      {
+        "target": "Прочее изделие",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "resolveViaPolynom": true,
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Прочие изделия"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "дет"
+            },
+            {
+              "type": "empty",
+              "column": "Тип объекта"
+            }
+          ]
+        }
       }
     ],
     "materials": {

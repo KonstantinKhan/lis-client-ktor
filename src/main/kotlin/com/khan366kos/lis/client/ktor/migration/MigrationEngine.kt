@@ -6,11 +6,14 @@ import com.khan366kos.lis.client.ktor.domain.Identifier
 import com.khan366kos.lis.client.ktor.domain.MappingElement
 import com.khan366kos.lis.client.ktor.domain.MaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
+import com.khan366kos.lis.client.ktor.domain.PolynomBackedObjectCandidate
 import com.khan366kos.lis.client.ktor.domain.UnresolvedAnalogGroupCandidate
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
+import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -52,6 +55,11 @@ suspend fun MigrationContext.runObjectsMigration() {
     materialSubstituteCandidates.addAll(results.flatMap { it.materialSubstituteCandidates })
     bomMaterialSpecClassifierIds.addAll(results.mapNotNull { it.bomMaterialClassifierId })
     bomMaterialRowClassifierIds.addAll(results.mapNotNull { it.bomMaterialRowClassifierId })
+
+    // Стандартные/Прочие изделия (mapping.types[].resolveViaPolynom) создаются не сразу в
+    // processObjectRow, а батчем здесь — ДО завершения runObjectsMigration(), чтобы
+    // runLinksMigration() (следующий шаг пайплайна) увидел их в identifiers как обычные объекты.
+    resolvePolynomBackedObjects(results.flatMap { it.polynomBackedCandidates })
 
     println(
         "Объекты: строк ${dataRows.size}, создано объектов ${objectsCreated.get()}, " +
@@ -336,12 +344,75 @@ suspend fun MigrationContext.resolveUnitId(
     }
 }
 
+// Стандартные/Прочие изделия (mapping.types[].resolveViaPolynom) — тот же путь, что materials/
+// AnalogGroups fallback: поиск по коду классификатора в ПОЛИНОМ (общий с mapping.materials
+// справочник "Коды", по решению пользователя не заводить отдельную настройку), create-bo-object
+// по location. Без сравнения обозначений (в отличие от resolveOrCreateMaterial) и без отдельного
+// кэша-дедупликации — group by classifierId уже даёт ровно один resolve на уникальный код, тот же
+// приём, что в AnalogGroupsEngine.resolveUnresolvedAnalogGroupCandidates. Состояние объекту не
+// проставляется явно — Loodsman резолвит его сам через настроенную в админке привязку типа к
+// свойству "применяемость" ПОЛИНОМ (тот же механизм, что уже используется для "Материал по КД").
+private suspend fun MigrationContext.resolvePolynomBackedObjects(candidates: List<PolynomBackedObjectCandidate>) {
+    if (candidates.isEmpty()) return
+
+    val materials = settings.mapping.materials
+    val classifierCodeProperty = materials.classifierCodePropertyId
+        ?: resolvePropertyDefinitionByAbsoluteCode(materials.classifierCodePropertyAbsoluteCode)
+    val searchScope = resolveSearchScope()
+
+    val objectsCreated = AtomicInteger(0)
+    val notFoundInPolynom = AtomicInteger(0)
+    val failures = AtomicInteger(0)
+    val byClassifierId = candidates.groupBy { it.classifierId }
+
+    val resolved = coroutineScope {
+        byClassifierId.entries.map { (classifierId, group) ->
+            async {
+                val target = group.first().target
+                try {
+                    val found = polynomClient.search.searchByStringProperty(
+                        accessToken = polynomAccessToken,
+                        scope = searchScope,
+                        propertyDefinition = classifierCodeProperty,
+                        value = classifierId.toString(),
+                    ).firstOrNull()
+                    if (found == null) {
+                        notFoundInPolynom.incrementAndGet()
+                        println("'$target': код классификатора '$classifierId' не найден в ПОЛИНОМ, объект не создан")
+                        return@async null
+                    }
+                    val location = polynomClient.classification.getLocation(
+                        polynomAccessToken, IdentifiableObjectDto(found.objectId, found.typeId)
+                    )
+                    val created = loodsmanClient.editObject.createBoObject(
+                        sessionId,
+                        CreateBoObjectInputDto(type = target, location = location, withLinks = false)
+                    )
+                    objectsCreated.incrementAndGet()
+                    Identifier(loodsmanId = created, classifierId = classifierId)
+                } catch (e: Exception) {
+                    failures.incrementAndGet()
+                    System.err.println("Не удалось создать '$target' по коду классификатора '$classifierId': ${e.message}")
+                    null
+                }
+            }
+        }.awaitAll()
+    }.filterNotNull()
+
+    identifiers.addAll(resolved)
+    println(
+        "Объекты через ПОЛИНОМ (Стандартные/Прочие изделия): кодов ${byClassifierId.size}, " +
+            "создано ${objectsCreated.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, ошибок ${failures.get()}"
+    )
+}
+
 private data class ObjectRowResult(
     val identifiers: List<Identifier>,
     val materialCandidates: List<MaterialCandidate>,
     val materialSubstituteCandidates: List<MaterialCandidate> = emptyList(),
     val bomMaterialClassifierId: Long? = null,
     val bomMaterialRowClassifierId: Long? = null,
+    val polynomBackedCandidates: List<PolynomBackedObjectCandidate> = emptyList(),
 )
 
 private suspend fun MigrationContext.processObjectRow(
@@ -368,7 +439,18 @@ private suspend fun MigrationContext.processObjectRow(
         return ObjectRowResult(emptyList(), emptyList(), bomMaterialRowClassifierId = bomMaterialRowClassifierId)
     }
 
-    val createdObjects = matches.mapNotNull { mappingElement ->
+    // Правила с resolveViaPolynom (Стандартное/Прочее изделие) не создают объект здесь — объект
+    // резолвится по коду классификатора через ПОЛИНОМ батчем после того, как все строки Excel уже
+    // прочитаны (см. resolvePolynomBackedObjects в runObjectsMigration), поэтому source/keyAttr
+    // для них не читается вовсе.
+    val (polynomRules, directRules) = matches.partition { it.resolveViaPolynom }
+    val polynomBackedCandidatesForRow = if (classifierIdForRow == null) {
+        emptyList()
+    } else {
+        polynomRules.map { PolynomBackedObjectCandidate(classifierIdForRow, it.target) }
+    }
+
+    val createdObjects = directRules.mapNotNull { mappingElement ->
         val keyAttr = row.value(mappingElement.source) ?: return@mapNotNull null
         val loodsmanId = createLoodsmanObject(mappingElement, keyAttr, row, objectsCreated, rowsFailed)
             ?: return@mapNotNull null
@@ -463,6 +545,7 @@ private suspend fun MigrationContext.processObjectRow(
         materialSubstituteCandidatesForRow,
         bomMaterialClassifierId,
         bomMaterialRowClassifierId,
+        polynomBackedCandidatesForRow,
     )
 }
 

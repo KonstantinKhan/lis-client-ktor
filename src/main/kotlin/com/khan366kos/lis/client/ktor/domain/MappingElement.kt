@@ -13,4 +13,5 @@ data class MappingElement(
     val conditions: Conditions,
     val childLinkType: String? = null,
     val childOfSameTypeLinkType: String? = null,
+    val resolveViaPolynom: Boolean = false,
 )
