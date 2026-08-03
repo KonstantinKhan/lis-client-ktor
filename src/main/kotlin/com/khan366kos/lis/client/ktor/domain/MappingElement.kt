@@ -12,4 +12,5 @@ data class MappingElement(
     val linkToRoot: Boolean = false,
     val conditions: Conditions,
     val childLinkType: String? = null,
+    val childOfSameTypeLinkType: String? = null,
 )

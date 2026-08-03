@@ -159,6 +159,7 @@
         "isProject": false,
         "linkToRoot": false,
         "childLinkType": "Технологическая ДСЕ для",
+        "childOfSameTypeLinkType": "Изготавливается из ...",
         "conditions": {
           "single": {},
           "or": [
@@ -198,6 +199,7 @@
         "isProject": false,
         "linkToRoot": false,
         "childLinkType": "Технологическая ДСЕ для",
+        "childOfSameTypeLinkType": "Изготавливается из ...",
         "conditions": {
           "single": {},
           "or": [],
@@ -227,6 +229,7 @@
         "isProject": false,
         "linkToRoot": false,
         "childLinkType": "Технологическая ДСЕ для",
+        "childOfSameTypeLinkType": "Изготавливается из ...",
         "conditions": {
           "single": {},
           "or": [],
@@ -256,6 +259,7 @@
         "isProject": false,
         "linkToRoot": false,
         "childLinkType": "Технологическая ДСЕ для",
+        "childOfSameTypeLinkType": "Изготавливается из ...",
         "conditions": {
           "single": {},
           "or": [],

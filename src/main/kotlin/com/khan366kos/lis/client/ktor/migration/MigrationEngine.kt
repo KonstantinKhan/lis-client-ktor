@@ -274,11 +274,24 @@ suspend fun MigrationContext.runLinksMigration() {
                 // родитель листа "Связи". Реальный инцидент: попытка создать связь в обычном
                 // направлении (родитель->потомок) с этим типом падает 500 "Нарушение правил
                 // связывания объектов".
+                //
+                // Частный случай: родитель по листу "Связи" САМ является объектом с childLinkType
+                // (т.е. тоже "Технологическая деталь") — тогда это не структурная ДСЕ-связь, а
+                // "Технологическая деталь входит в Технологическую деталь", и тип связи другой
+                // ("Изготавливается из ...", childOfSameTypeLinkType), направление обычное
+                // (родитель->потомок, без реверса), как у материалов.
                 val childLinkType = pair.child.childLinkType
-                if (childLinkType != null) {
-                    linkObjects(pair.child.loodsmanId, pair.parent.loodsmanId, childLinkType, linksFailed, pair.quantity, unitId)
-                } else {
-                    linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
+                val childOfSameTypeLinkType = pair.child.childOfSameTypeLinkType
+                when {
+                    childLinkType != null && pair.parent.childLinkType != null && childOfSameTypeLinkType != null -> {
+                        linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, childOfSameTypeLinkType, linksFailed, pair.quantity, unitId)
+                    }
+                    childLinkType != null -> {
+                        linkObjects(pair.child.loodsmanId, pair.parent.loodsmanId, childLinkType, linksFailed, pair.quantity, unitId)
+                    }
+                    else -> {
+                        linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
+                    }
                 }
             }
         }.awaitAll()
@@ -425,7 +438,12 @@ private suspend fun MigrationContext.processObjectRow(
         emptyList()
     } else {
         nonFolderObjects.map { (mappingElement, loodsmanId) ->
-            Identifier(loodsmanId = loodsmanId, classifierId = classifierIdForRow, childLinkType = mappingElement.childLinkType)
+            Identifier(
+                loodsmanId = loodsmanId,
+                classifierId = classifierIdForRow,
+                childLinkType = mappingElement.childLinkType,
+                childOfSameTypeLinkType = mappingElement.childOfSameTypeLinkType,
+            )
         }
     }
 
