@@ -9,4 +9,4 @@
 - [05-settings-reference.md](05-settings-reference.md) - Референс settings.json
 - [06-glossary.md](06-glossary.md) - Глоссарий
 
-**Дата обработки:** 2026-08-01
+**Дата обработки:** 2026-08-03

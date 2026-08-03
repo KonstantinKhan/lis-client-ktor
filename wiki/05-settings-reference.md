@@ -1,6 +1,6 @@
 # Референс `settings.json`
 
-Про "что означает" каждое поле для бизнес-логики — `raw/04-business-logic.md`. Здесь — "как
+Про "что означает" каждое поле для бизнес-логики — [[04-business-logic.md]]. Здесь — "как
 задать": какой тип, обязательное ли поле, дефолт, пример из текущего `settings.json`.
 
 Все Kotlin-классы схемы — `@Serializable` (kotlinx.serialization), парсятся строго: поля без
@@ -23,7 +23,7 @@
 | `maxConcurrentRequests` | int | `10` | `50` |
 
 `maxConcurrentRequests` — размер `Client.requestGate: Semaphore`, единственная точка
-троттлинга ко всем эндпоинтам Loodsman разом (см. `raw/02-external-api-principles.md`).
+троттлинга ко всем эндпоинтам Loodsman разом (см. [[02-external-api-principles.md]]).
 
 ## `polynom` — подключение к ПОЛИНОМ:MDM
 
@@ -144,7 +144,7 @@ find/replace, несмотря на названия полей `find`/`target`)
 | `target` | string | — (обязательно) | `"Деталь"` — должен существовать как реальный тип в Loodsman (проверяется `Validator`) |
 | `source` | string | — (обязательно) | `"обозначение"` — имя столбца с ключевым атрибутом |
 | `state` | string? | `null` | `"Проектирование"` — обязателен по смыслу для обычного создания (`EditObject/new-object`, `stateName`), но игнорируется, если `resolveViaPolynom: true` (см. ниже) — можно не указывать в JSON |
-| `isProject` | bool | `false` | `false` — см. `raw/03-external-api-quirks.md` про опасность `true` |
+| `isProject` | bool | `false` | `false` — см. [[03-external-api-quirks.md]] про опасность `true` |
 | `isFolder` | bool | `false` | `true` для правила "Папка" |
 | `linkToRoot` | bool | `false` | `true` — жёсткая привязка к root сразу после создания |
 | `conditions` | `Conditions` | — (обязательно) | см. ниже |
@@ -247,5 +247,5 @@ find/replace, несмотря на названия полей `find`/`target`)
 }
 ```
 
-Обе проверяются на строках листа "Объекты" — `raw/03-external-api-quirks.md` объясняет,
+Обе проверяются на строках листа "Объекты" — [[03-external-api-quirks.md]] объясняет,
 почему не на "Связи" (там таких данных просто нет).

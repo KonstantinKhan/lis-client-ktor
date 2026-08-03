@@ -68,7 +68,7 @@
 - **`excel/`** — `ExcelSaxParser`: потоковый (SAX, не DOM) парсер xlsx через Apache POI,
   отдаёт `Flow<ExcelRow>` с опциональным фильтром по имени листа. SAX выбран ради памяти
   (файлы могут быть большими), но реальная конкурентная обработка строк требует сначала
-  полностью собрать результат в `List` — см. `raw/03-external-api-quirks.md`, антипаттерн
+  полностью собрать результат в `List` — см. `[[03-external-api-quirks.md]], антипаттерн
   `flatMapMerge`.
 - **`repl/`** — интерактивная консоль `ReplConsole`, команды реализуют `ICommand`
   (`suspend fun execute`), диспетчеризуются по первому слову введённой строки в
@@ -147,11 +147,11 @@ LoodsmanExit            — CheckOut/check-in-2, изменения станов
 ```
 
 Каждый шаг — `worker{}` в `workers/MigrationWorkers.kt`, вызов подключён в
-`pipelines/MigrationPipeline.kt`. Подробности каждого шага — `raw/04-business-logic.md`.
+`pipelines/MigrationPipeline.kt`. Подробности каждого шага — [[04-business-logic.md]].
 
 ## Rule-engine: как устроено расширение без правки движка
 
-Схема `settings.json` подробно описана в `raw/05-settings-reference.md`; здесь — принцип.
+Схема `settings.json` подробно описана в `[[05-settings-reference.md]]; здесь — принцип.
 
 - `Conditions.single/or/and` — три независимые группы условий на строку Excel. Каждая
   непустая группа должна пройти (AND между группами); пустая/неприменимая группа (`{}` или

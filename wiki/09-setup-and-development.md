@@ -76,7 +76,7 @@
 }
 ```
 
-Подробное описание всех полей см. в [[05-settings-reference.md](wiki/05-settings-reference.md)]
+Подробное описание всех полей см. в [[05-settings-reference.md]]
 
 ### 2. Сборка и запуск
 
@@ -240,7 +240,7 @@ println("Детальная информация: $data")
 
 ## Полезные ресурсы
 
-- [[01-architecture-overview.md](wiki/01-architecture-overview.md)] — обзор архитектуры
-- [[04-business-logic.md](wiki/04-business-logic.md)] — бизнес-логика миграции
-- [[05-settings-reference.md](wiki/05-settings-reference.md)] — справочник по конфигурации
-- [[06-glossary.md](wiki/06-glossary.md)] — глоссарий терминов
+- [[01-architecture-overview.md]] — обзор архитектуры
+- [[04-business-logic.md]] — бизнес-логика миграции
+- [[05-settings-reference.md]] — справочник по конфигурации
+- [[06-glossary.md]] — глоссарий терминов
