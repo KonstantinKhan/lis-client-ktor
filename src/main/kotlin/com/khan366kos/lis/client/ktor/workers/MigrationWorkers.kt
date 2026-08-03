@@ -5,6 +5,7 @@ import com.khan366kos.lis.client.ktor.domain.Status
 import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.logic.Validator
+import com.khan366kos.lis.client.ktor.migration.runBlanksMigration
 import com.khan366kos.lis.client.ktor.migration.runBomMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runLinksMigration
 import com.khan366kos.lis.client.ktor.migration.runMaterialsMigration
@@ -22,6 +23,12 @@ fun ICorChainDsl<MigrationContext>.validateMapping() = worker {
         if (!validator.isValidMaterialTarget()) {
             throw RuntimeException(
                 "В settings.json mapping.materials.materialTarget указывает на тип, " +
+                    "отсутствующий среди типов Loodsman"
+            )
+        }
+        if (!validator.isValidBlankTargets()) {
+            throw RuntimeException(
+                "В settings.json mapping.blanks.target/materialTarget указывает на тип, " +
                     "отсутствующий среди типов Loodsman"
             )
         }
@@ -84,6 +91,21 @@ fun ICorChainDsl<MigrationContext>.migrateBomMaterials() = worker {
         // Как и в migrateMaterials() — статус+тело ответа Полином печатаются внутри
         // runBomMaterialsMigration(), except{} тут не suspend.
         System.err.println("Ошибка миграции материалов по КД (DS): ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateBlanks() = worker {
+    on { status == Status.BOM_MATERIALS_MIGRATED }
+    handle {
+        runBlanksMigration()
+        status = Status.BLANKS_MIGRATED
+        println("Миграция заготовок завершена")
+    }
+    except { e ->
+        // Как и в migrateMaterials()/migrateBomMaterials() — статус+тело ответа Полином печатаются
+        // внутри runBlanksMigration(), except{} тут не suspend.
+        System.err.println("Ошибка миграции заготовок: ${e.message}")
         throw e
     }
 }

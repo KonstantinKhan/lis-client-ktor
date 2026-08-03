@@ -544,6 +544,7 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
                 val materialLoodsmanId = try {
                     resolveBomMaterialByClassifierCode(
                         classifierCode,
+                        materials.materialTarget,
                         classifierCodeProperty,
                         searchScope,
                         elementCache,
@@ -624,9 +625,12 @@ private suspend fun MigrationContext.linkBomMaterialToParent(
 
 // Только поиск по коду классификатора (шаг 1-2 из resolveOrCreateMaterial/findElementByClassifierCode,
 // БЕЗ сравнения обозначения и БЕЗ фолбэка на создание элемента в ПОЛИНОМ) — возвращает null, если
-// совпадения нет.
-private suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
+// совпадения нет. Без private — переиспользуется в BlanksEngine.kt (тот же поиск-без-сравнения,
+// но с другим целевым типом Loodsman, mapping.blanks.materialTarget вместо
+// mapping.materials.materialTarget, отсюда параметр target).
+suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
     classifierCode: String,
+    target: String,
     classifierCodeProperty: IdentifiableObjectDto,
     searchScope: IdentifiableObjectDto,
     elementCache: MutableMap<Pair<Int, Int>, Int>,
@@ -640,7 +644,6 @@ private suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
         value = classifierCode,
     ).firstOrNull() ?: return null
 
-    val materials = settings.mapping.materials
     val key = found.objectId to found.typeId
     return elementCacheMutex.withLock {
         elementCache[key]?.let { return@withLock it }
@@ -651,7 +654,7 @@ private suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
         )
         val created = loodsmanClient.editObject.createBoObject(
             sessionId,
-            CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)
+            CreateBoObjectInputDto(type = target, location = location, withLinks = false)
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()

@@ -66,4 +66,8 @@ data class MigrationContext(
     // AnalogGroupsEngine.runAnalogGroupsMigration() ДО построения самих групп (см. fallback через
     // ПОЛИНОМ по коду классификатора).
     val unresolvedAnalogGroupCandidates: MutableList<UnresolvedAnalogGroupCandidate> = mutableListOf(),
+    // Кандидаты на "Заготовку" + "Материал основной" (mapping.blanks) — независимый поток,
+    // добавленный к mapping.materials (поток A). Собираются синхронно в runObjectsMigration()
+    // (та же схема слияния, что materialCandidates), обрабатываются BlanksEngine.runBlanksMigration().
+    val blankCandidates: MutableList<BlankCandidate> = mutableListOf(),
 )

@@ -1,6 +1,7 @@
 package com.khan366kos.lis.client.ktor.migration
 
 import com.khan366kos.lis.client.ktor.domain.AnalogGroupCandidate
+import com.khan366kos.lis.client.ktor.domain.BlankCandidate
 import com.khan366kos.lis.client.ktor.domain.BomMaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.Identifier
 import com.khan366kos.lis.client.ktor.domain.MappingElement
@@ -55,6 +56,7 @@ suspend fun MigrationContext.runObjectsMigration() {
     materialSubstituteCandidates.addAll(results.flatMap { it.materialSubstituteCandidates })
     bomMaterialSpecClassifierIds.addAll(results.mapNotNull { it.bomMaterialClassifierId })
     bomMaterialRowClassifierIds.addAll(results.mapNotNull { it.bomMaterialRowClassifierId })
+    blankCandidates.addAll(results.flatMap { it.blankCandidates })
 
     // Стандартные/Прочие изделия (mapping.types[].resolveViaPolynom) создаются не сразу в
     // processObjectRow, а батчем здесь — ДО завершения runObjectsMigration(), чтобы
@@ -65,7 +67,8 @@ suspend fun MigrationContext.runObjectsMigration() {
         "Объекты: строк ${dataRows.size}, создано объектов ${objectsCreated.get()}, " +
             "с привязкой к классификатору ${created.size}, ошибок ${rowsFailed.get()}, " +
             "DS-объектов ${bomMaterialSpecClassifierIds.size}, " +
-            "строк раздела Материалы ${bomMaterialRowClassifierIds.size}"
+            "строк раздела Материалы ${bomMaterialRowClassifierIds.size}, " +
+            "кандидатов на заготовки ${blankCandidates.size}"
     )
 }
 
@@ -413,6 +416,7 @@ private data class ObjectRowResult(
     val bomMaterialClassifierId: Long? = null,
     val bomMaterialRowClassifierId: Long? = null,
     val polynomBackedCandidates: List<PolynomBackedObjectCandidate> = emptyList(),
+    val blankCandidates: List<BlankCandidate> = emptyList(),
 )
 
 private suspend fun MigrationContext.processObjectRow(
@@ -514,6 +518,23 @@ private suspend fun MigrationContext.processObjectRow(
         }
     }
 
+    // Заготовка + материал основной (mapping.blanks) — независимый поток, добавленный к потоку A
+    // выше: тот же classifierCodeColumn/appliesToTargets (materialTargetObjects), но триггерится
+    // только когда код классификатора на строке реально непустой (в отличие от потока A, где
+    // пустой код просто ведёт к фолбэку на создание элемента по имени). blanks.target.isBlank()
+    // выключает фичу целиком.
+    val blanks = settings.mapping.blanks
+    val blankCandidatesForRow = if (blanks.target.isBlank()) {
+        emptyList()
+    } else {
+        materialTargetObjects.mapNotNull { (mappingElement, loodsmanId) ->
+            val classifierCode = row.value(materials.classifierCodeColumn)?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val designation = row.value(mappingElement.source) ?: return@mapNotNull null
+            BlankCandidate(loodsmanId, designation, classifierCode)
+        }
+    }
+
     // В identifiers (резолв листа "Связи") попадают только не-папочные объекты — папка не должна
     // становиться родителем в структуре, только организационным контейнером.
     val identifiersForRow = if (classifierIdForRow == null) {
@@ -546,6 +567,7 @@ private suspend fun MigrationContext.processObjectRow(
         bomMaterialClassifierId,
         bomMaterialRowClassifierId,
         polynomBackedCandidatesForRow,
+        blankCandidatesForRow,
     )
 }
 

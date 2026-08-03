@@ -183,13 +183,16 @@
   },
   "active": "d502731274f63611",
   "lastOpenFiles": [
+    "15-cor-dsl-guide.md",
+    "14-known-issues.md",
+    "13-concurrency-guide.md",
+    "12-key-classes.md",
+    "11-api-reference.md",
     "08-components.md",
     "index.md",
-    "12-key-classes.md",
     "09-setup-and-development.md",
     "wiki/12-key-classes.md",
     "wiki",
-    "05-settings-reference.md",
-    "15-cor-dsl-guide.md"
+    "05-settings-reference.md"
   ]
 }
