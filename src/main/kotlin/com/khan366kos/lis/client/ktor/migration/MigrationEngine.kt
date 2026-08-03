@@ -268,8 +268,18 @@ suspend fun MigrationContext.runLinksMigration() {
             async {
                 val unitId = pair.unitDesignation?.let { unitByDesignation[it] }
                 if (unitId != null) unitsAssigned.incrementAndGet()
-                val linkType = pair.child.childLinkType ?: linksSheet.linkType
-                linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linkType, linksFailed, pair.quantity, unitId)
+                // childLinkType (например "Технологическая ДСЕ для") — правило связывания в
+                // Loodsman задано в обратную сторону относительно обычного BOM: субъект связи —
+                // сам объект-потомок (например "Технологическая деталь"), а не структурный
+                // родитель листа "Связи". Реальный инцидент: попытка создать связь в обычном
+                // направлении (родитель->потомок) с этим типом падает 500 "Нарушение правил
+                // связывания объектов".
+                val childLinkType = pair.child.childLinkType
+                if (childLinkType != null) {
+                    linkObjects(pair.child.loodsmanId, pair.parent.loodsmanId, childLinkType, linksFailed, pair.quantity, unitId)
+                } else {
+                    linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
+                }
             }
         }.awaitAll()
     }.count { it }

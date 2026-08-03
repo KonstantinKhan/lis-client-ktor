@@ -158,7 +158,7 @@
         "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ",
+        "childLinkType": "Технологическая ДСЕ для",
         "conditions": {
           "single": {},
           "or": [
@@ -197,7 +197,7 @@
         "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ",
+        "childLinkType": "Технологическая ДСЕ для",
         "conditions": {
           "single": {},
           "or": [],
@@ -226,7 +226,7 @@
         "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ",
+        "childLinkType": "Технологическая ДСЕ для",
         "conditions": {
           "single": {},
           "or": [],
@@ -255,7 +255,7 @@
         "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ",
+        "childLinkType": "Технологическая ДСЕ для",
         "conditions": {
           "single": {},
           "or": [],
