@@ -51,6 +51,19 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
     val materialLinksCreated = AtomicInteger(0)
     val materialsNotFound = AtomicInteger(0)
     val failures = AtomicInteger(0)
+    val ratesAssigned = AtomicInteger(0)
+    val unitsNotFound = AtomicInteger(0)
+    val unitsCollision = AtomicInteger(0)
+
+    // Норма расхода (mapping.blanks.rateUnitColumn) — резолв уникальных обозначений один раз,
+    // тот же паттерн, что resolveUnitId везде в движке (одно обозначение обычно повторяется на
+    // многих строках).
+    val distinctRateUnits = blankCandidates.mapNotNull { it.rateUnitDesignation }.toSet()
+    val rateUnitById = coroutineScope {
+        distinctRateUnits.map { designation ->
+            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision) }
+        }.awaitAll()
+    }.toMap()
 
     coroutineScope {
         blankCandidates.map { candidate ->
@@ -99,12 +112,18 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         return@async
                     }
 
+                    val rateUnitId = candidate.rateUnitDesignation?.let { rateUnitById[it] }
+                    if (candidate.rate != null) ratesAssigned.incrementAndGet()
+
                     loodsmanClient.editObject.newLink(
                         sessionId,
                         NewLinkInputDto(
                             parentVersionId = blankId,
                             childVersionId = materialId,
                             linkType = blanks.materialLinkType,
+                            minQuantity = candidate.rate ?: 1.0,
+                            maxQuantity = candidate.rate ?: 1.0,
+                            unitId = rateUnitId,
                         )
                     )
                     materialLinksCreated.incrementAndGet()
@@ -125,6 +144,8 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
         "Заготовки: кандидатов ${blankCandidates.size}, создано заготовок ${blanksCreated.get()}, " +
             "связей деталь-заготовка ${blankLinksCreated.get()}, создано материалов ${materialsCreated.get()}, " +
             "связей заготовка-материал ${materialLinksCreated.get()}, " +
-            "материал не найден в ПОЛИНОМ ${materialsNotFound.get()}, ошибок ${failures.get()}"
+            "материал не найден в ПОЛИНОМ ${materialsNotFound.get()}, ошибок ${failures.get()}, " +
+            "норм расхода назначено ${ratesAssigned.get()}, обозначение единицы не найдено ${unitsNotFound.get()}, " +
+            "коллизий обозначения ${unitsCollision.get()}"
     )
 }

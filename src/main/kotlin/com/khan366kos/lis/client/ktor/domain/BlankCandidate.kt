@@ -7,4 +7,9 @@ data class BlankCandidate(
     val detailLoodsmanId: Int,
     val detailDesignation: String,
     val classifierCode: String,
+    // Норма расхода (mapping.blanks.rateColumn/rateUnitColumn, лист "Объекты") — для связи
+    // заготовка -> материал основной. null означает "не проставлять" — либо колонка не настроена,
+    // либо (для rate) значение в ячейке не читается как число (см. BlanksEngine.kt, лог там же).
+    val rate: Double? = null,
+    val rateUnitDesignation: String? = null,
 )

@@ -531,7 +531,26 @@ private suspend fun MigrationContext.processObjectRow(
             val classifierCode = row.value(materials.classifierCodeColumn)?.takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
             val designation = row.value(mappingElement.source) ?: return@mapNotNull null
-            BlankCandidate(loodsmanId, designation, classifierCode)
+
+            // Норма расхода на будущую связь заготовка -> материал основной (не reused
+            // resolveLinkQuantity — её "пустая колонка = 1.0" здесь не нужна, пустая колонка
+            // должна значить "не трогать вообще", а не молчаливый дефолт 1.0). Колонка настроена,
+            // но ячейка не читается как число — не блокирует создание заготовки/материала
+            // (решение пользователя), только предупреждение в лог.
+            val rate = blanks.rateColumn.takeIf { it.isNotBlank() }?.let { column ->
+                val parsed = row.value(column)?.replace(",", ".")?.toDoubleOrNull()
+                if (parsed == null) {
+                    System.err.println(
+                        "Заготовки: норма расхода не прочитана в столбце '$column' (деталь " +
+                            "'$designation', код классификатора материала '$classifierCode') — " +
+                            "заготовка/материал будут созданы без нормы"
+                    )
+                }
+                parsed
+            }
+            val rateUnitDesignation = resolveLinkUnitDesignation(blanks.rateUnitColumn, emptyList(), row)
+
+            BlankCandidate(loodsmanId, designation, classifierCode, rate, rateUnitDesignation)
         }
     }
 

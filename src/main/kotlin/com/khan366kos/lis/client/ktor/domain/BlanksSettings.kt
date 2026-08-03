@@ -17,6 +17,12 @@ data class BlanksSettings(
     val linkType: String = "",
     val materialTarget: String = "",
     val materialLinkType: String = "",
+    // Норма расхода на связи заготовка -> материал основной (minQuantity/maxQuantity/unitId,
+    // тот же механизм, что "Количество" у потока C, см. MaterialsEngine.linkBomMaterialToParent) —
+    // читаются со строки листа "Объекты" (не "Связи"). rateColumn.isBlank() выключает — норма
+    // никогда не читается и не проставляется.
+    val rateColumn: String = "",
+    val rateUnitColumn: String = "",
 ) {
     companion object {
         val None = BlanksSettings()

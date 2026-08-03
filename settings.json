@@ -414,7 +414,9 @@
       "state": "Проектирование",
       "linkType": "Заготовка для",
       "materialTarget": "Материал основной",
-      "materialLinkType": "Изготавливается из ..."
+      "materialLinkType": "Изготавливается из ...",
+      "rateColumn": "Норма расхода",
+      "rateUnitColumn": "Единица измерения"
     }
   }
 }
