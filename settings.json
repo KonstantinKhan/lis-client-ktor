@@ -151,6 +151,132 @@
             }
           ]
         }
+      },
+      {
+        "target": "Технологическая деталь",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "childLinkType": "Технологическая ДСЕ",
+        "conditions": {
+          "single": {},
+          "or": [
+            {
+              "type": "endsWith",
+              "column": "обозначение",
+              "is": "Т"
+            },
+            {
+              "type": "endsWith",
+              "column": "обозначение",
+              "is": "T"
+            }
+          ],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Детали"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "дет"
+            },
+            {
+              "type": "empty",
+              "column": "Тип объекта"
+            }
+          ]
+        }
+      },
+      {
+        "target": "Технологическая деталь",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "childLinkType": "Технологическая ДСЕ",
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Детали"
+            },
+            {
+              "type": "check",
+              "column": "Тип объекта",
+              "is": "Образец"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "дет"
+            }
+          ]
+        }
+      },
+      {
+        "target": "Технологическая деталь",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "childLinkType": "Технологическая ДСЕ",
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Детали"
+            },
+            {
+              "type": "check",
+              "column": "Тип объекта",
+              "is": "Образец"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "литье"
+            }
+          ]
+        }
+      },
+      {
+        "target": "Технологическая деталь",
+        "source": "обозначение",
+        "state": "Проектирование",
+        "isProject": false,
+        "linkToRoot": false,
+        "childLinkType": "Технологическая ДСЕ",
+        "conditions": {
+          "single": {},
+          "or": [],
+          "and": [
+            {
+              "type": "check",
+              "column": "Раздел спецификации",
+              "is": "Детали"
+            },
+            {
+              "type": "check",
+              "column": "Тип объекта",
+              "is": "Заготовка"
+            },
+            {
+              "type": "check",
+              "column": "Тип АСУП",
+              "is": "литье"
+            }
+          ]
+        }
       }
     ],
     "materials": {

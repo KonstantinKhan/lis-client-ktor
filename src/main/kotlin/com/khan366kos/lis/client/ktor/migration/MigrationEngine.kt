@@ -268,7 +268,8 @@ suspend fun MigrationContext.runLinksMigration() {
             async {
                 val unitId = pair.unitDesignation?.let { unitByDesignation[it] }
                 if (unitId != null) unitsAssigned.incrementAndGet()
-                linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
+                val linkType = pair.child.childLinkType ?: linksSheet.linkType
+                linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linkType, linksFailed, pair.quantity, unitId)
             }
         }.awaitAll()
     }.count { it }
@@ -413,7 +414,9 @@ private suspend fun MigrationContext.processObjectRow(
     val identifiersForRow = if (classifierIdForRow == null) {
         emptyList()
     } else {
-        nonFolderObjects.map { (_, loodsmanId) -> Identifier(loodsmanId = loodsmanId, classifierId = classifierIdForRow) }
+        nonFolderObjects.map { (mappingElement, loodsmanId) ->
+            Identifier(loodsmanId = loodsmanId, classifierId = classifierIdForRow, childLinkType = mappingElement.childLinkType)
+        }
     }
 
     // Признак "у объекта есть собственная конструкторская спецификация" (DS) — см.

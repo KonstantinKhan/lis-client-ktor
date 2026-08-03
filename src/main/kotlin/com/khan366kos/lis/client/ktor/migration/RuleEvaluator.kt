@@ -12,6 +12,9 @@ object RuleEvaluators {
         "notEndsWith" to RuleEvaluator { rule, value ->
             value != null && rule.isValue != null && !value.endsWith(rule.isValue)
         },
+        "endsWith" to RuleEvaluator { rule, value ->
+            value != null && rule.isValue != null && value.endsWith(rule.isValue)
+        },
         // RowView.value() уже возвращает null и для отсутствующей колонки, и для пустой/
         // пробельной ячейки (trim + takeIf isNotEmpty) — достаточно проверить value == null.
         "empty" to RuleEvaluator { _, value -> value == null },

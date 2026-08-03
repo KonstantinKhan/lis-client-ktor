@@ -11,4 +11,5 @@ data class MappingElement(
     val isFolder: Boolean = false,
     val linkToRoot: Boolean = false,
     val conditions: Conditions,
+    val childLinkType: String? = null,
 )
