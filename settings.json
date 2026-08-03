@@ -412,7 +412,7 @@
     "blanks": {
       "target": "Заготовка",
       "state": "Проектирование",
-      "linkType": "Заготовка",
+      "linkType": "Заготовка для",
       "materialTarget": "Материал основной",
       "materialLinkType": "Изготавливается из ..."
     }

@@ -67,11 +67,14 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                     ).asInt()
                     blanksCreated.incrementAndGet()
 
+                    // Реверсивная связь: субъект — заготовка, объект — деталь (правило связывания
+                    // в Loodsman для типа blanks.linkType сконфигурировано в эту сторону, как у
+                    // "Технологическая ДСЕ для").
                     loodsmanClient.editObject.newLink(
                         sessionId,
                         NewLinkInputDto(
-                            parentVersionId = candidate.detailLoodsmanId,
-                            childVersionId = blankId,
+                            parentVersionId = blankId,
+                            childVersionId = candidate.detailLoodsmanId,
                             linkType = blanks.linkType,
                         )
                     )
