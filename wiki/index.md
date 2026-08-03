@@ -38,4 +38,4 @@
 
 - [[10-concepts-and-patterns.md](wiki/10-concepts-and-patterns.md)] - Ключевые концепции и паттерны: COR DSL, Rule Engine, конкурентность, streaming processing
 
-**Дата создания:** 2026-08-01
+**Дата создания:** 2026-08-03

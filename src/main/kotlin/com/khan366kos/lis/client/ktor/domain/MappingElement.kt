@@ -6,7 +6,10 @@ import kotlinx.serialization.Serializable
 data class MappingElement(
     val target: String,
     val source: String,
-    val state: String,
+    // Игнорируется, если resolveViaPolynom=true — объект создаётся через create-bo-object
+    // (состояние резолвит сам Loodsman через привязку типа к свойству "применяемость" ПОЛИНОМ),
+    // а не через new-object, у которого stateName задаётся отсюда.
+    val state: String? = null,
     val isProject: Boolean = false,
     val isFolder: Boolean = false,
     val linkToRoot: Boolean = false,

@@ -285,7 +285,6 @@
       {
         "target": "Стандартное изделие",
         "source": "обозначение",
-        "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
         "resolveViaPolynom": true,
@@ -313,7 +312,6 @@
       {
         "target": "Стандартное изделие",
         "source": "обозначение",
-        "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
         "resolveViaPolynom": true,
@@ -341,7 +339,6 @@
       {
         "target": "Прочее изделие",
         "source": "обозначение",
-        "state": "Проектирование",
         "isProject": false,
         "linkToRoot": false,
         "resolveViaPolynom": true,
@@ -375,7 +372,6 @@
       "classifierCodePropertyAbsoluteCode": "c:ClassifData::pd:ClassifCode",
       "codesReferenceName": "Коды",
       "materialTarget": "Материал по КД",
-      "materialState": "Проектирование",
       "detailLinkType": "Изготавливается из ...",
       "hierarchy": {
         "referenceName": "Конструкторские материалы",

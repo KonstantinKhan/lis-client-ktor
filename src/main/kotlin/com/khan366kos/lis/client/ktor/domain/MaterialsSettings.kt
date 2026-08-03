@@ -34,7 +34,6 @@ data class MaterialsSettings(
     // для search/execute-property-search: без scope (null) сервер падает с 500 NullReference.
     val codesReferenceName: String,
     val materialTarget: String,
-    val materialState: String,
     val detailLinkType: String,
     // Справочник → каталог → группа для новых элементов "материал без совпадения по коду" —
     // тоже создаются НЕ нами (см. codesReferenceName выше): правила связывания типов между
@@ -62,7 +61,6 @@ data class MaterialsSettings(
             classifierCodePropertyAbsoluteCode = "",
             codesReferenceName = "",
             materialTarget = "",
-            materialState = "",
             detailLinkType = "",
             hierarchy = MaterialsHierarchy.None,
         )
