@@ -127,7 +127,8 @@ object SomePipeline : ICorExec<MigrationContext> by pipeline<MigrationContext>({
 2. **`Status`** (`domain/Status.kt`) — детальный, гейтит шаги внутри `LoodsmanInit`/
    `MigrationPipeline`:
    `START → EXIST_CONFIG/NOT_CONFIG → LOGIN → LOGIN_SUCCESS → CHECKOUT → CONNECT_CHECKOUT →
-   OBJECTS_MIGRATED → LINKS_MIGRATED → MATERIALS_MIGRATED → BOM_MATERIALS_MIGRATED`.
+   OBJECTS_MIGRATED → LINKS_MIGRATED → MATERIALS_MIGRATED → BOM_MATERIALS_MIGRATED →
+   BLANKS_MIGRATED`.
 
 ## Пайплайн миграции целиком
 
@@ -143,6 +144,8 @@ MigrationPipeline:
                             через ПОЛИНОМ, группы замены материала
   migrateBomMaterials()  — runBomMaterialsMigration(): материалы по КД для DS-объектов
                             (только по коду классификатора, без ПОЛИНОМ-фолбэка)
+  migrateBlanks()         — runBlanksMigration(): заготовки + материал основной + норма расхода
+                            (независимый поток от migrateMaterials(), см. mapping.blanks)
 LoodsmanExit            — CheckOut/check-in-2, изменения становятся видны снаружи сессии
 ```
 

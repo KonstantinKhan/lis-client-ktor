@@ -29,7 +29,25 @@
 - **`newLink`/`create`/`createBoObject` возвращают `IdentifierDto`** — голый `Int`
   (`@JvmInline value class`), не задокументированный явно в swagger.lapis для этих
   эндпоинтов — установлено эмпирически (первый запуск падал бы с ошибкой десериализации,
-  если бы форма ответа отличалась).
+  если бы форма ответа отличалась). Для `new-link` этот `Int` — `idLink` только что созданной
+  связи (то же значение, что отдаёт `idLink` в `ObjectInfo/get-linked-fast`) — нужен, если дальше
+  требуется что-то сделать именно со связью (например `up-link-attr-values`, см. ниже), а не с
+  объектами на её концах.
+- **Атрибуты связи — отдельный эндпоинт от атрибутов объекта и от встроенного количества.**
+  Три разных механизма, которые легко перепутать:
+  1. `EditObject/up-attr-values-by-ids` (`UpAttrValuesByIdsInputDto{versionId, attributeName,
+     attributeValue, unitGuid}`) — атрибут ОБЪЕКТА, `versionId` — id объекта.
+  2. `NewLinkInputDto.minQuantity`/`maxQuantity`/`unitId` (при создании связи) — встроенное
+     количество/единица САМОЙ связи (величина состава BOM), не атрибут в общем смысле, отдельного
+     эндпоинта для правки после создания нет (только `EditObject/up-link`, см. ниже).
+  3. `EditObject/up-link-attr-values` (`UpLinkAttrValuesInputDto{linkId, attributeName,
+     attributeValue, unitGuid}`) — произвольный КАСТОМНЫЙ атрибут СВЯЗИ (заведённый в схеме
+     Loodsman, например величина "Масса" для "Нормы расхода"), `linkId` — id связи (`idLink`),
+     НЕ id объекта. Реальный инцидент: норма расхода изначально по ошибке проставлялась через
+     механизм (2) (`minQuantity`/`maxQuantity`/`unitId`) — оставалась пустой, потому что это два
+     независимых механизма в схеме Loodsman, один не подставляется за другой. Правильный путь —
+     (3), с `linkId`, полученным из возврата `new-link` (см. пункт выше). Подробности —
+     [[04-business-logic.md]] (поток D, заготовки), [[11-api-reference.md]].
 - **`EditObject/up-link` — метод POST, а не PUT.** Первоначальный дизайн-документ
   (`docs/link-measure-unit-migration.md`, написан до сверки со `swagger.lapis`) утверждал PUT;
   реальный `swagger.lapis` (`create_up_link POST /api/v4/EditObject/up-link`) говорит POST.

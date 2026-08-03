@@ -28,7 +28,8 @@
 | POST | `/EditObject/new-object` | `client/EditObject.kt` | Создать новый объект |
 | POST | `/EditObject/new-link` | `client/EditObject.kt` | Создать связь между объектами |
 | POST | `/EditObject/up-link` | `client/EditObject.kt` | Обновить существующую связь |
-| POST | `/EditObject/up-attr-values-by-ids` | `client/EditObject.kt` | Установить значения атрибутов |
+| POST | `/EditObject/up-attr-values-by-ids` | `client/EditObject.kt` | Установить значения атрибутов ОБЪЕКТА |
+| POST | `/EditObject/up-link-attr-values` | `client/EditObject.kt` | Установить значения атрибутов СВЯЗИ (не объекта, не встроенное количество связи — см. [[03-external-api-quirks.md]]) |
 | POST | `/EditObject/create-bo-object` | `client/EditObject.kt` | Создать бизнес-объект |
 | POST | `/EditObject/insert-object` | `client/Client.kt` | Вставить объект (гибкий) |
 
@@ -227,6 +228,36 @@ data class UpAttrValuesByIdsOutputDto(
     val result: Boolean           // Результат операции
 )
 ```
+
+#### POST `/EditObject/up-link-attr-values`
+
+**Файл:** `client/EditObject.kt` (`setLinkAttrValues`)
+
+Атрибут СВЯЗИ (не объекта, не встроенное `minQuantity`/`maxQuantity`/`unitId` самой связи —
+подробности [[03-external-api-quirks.md]]).
+
+**Входные данные** (каждый элемент списка, тело запроса — массив):
+```kotlin
+data class UpLinkAttrValuesInputDto(
+    val linkId: Int,             // idLink — id связи, НЕ id объекта; берётся из возврата new-link
+    val attributeName: String? = null,
+    val attributeValue: String? = null,
+    val unitGuid: String? = null // тот же id, что unitId у Measure/units-by-designation
+)
+```
+
+**Выходные данные:**
+```kotlin
+data class UpLinkAttrValuesOutputDto(
+    val isSuccess: Boolean,
+    val errorMessage: String? = null,
+    val linkId: Int,
+    val attributeName: String? = null,
+)
+```
+
+`isSuccess=false` — не исключение, обычный 200 с телом; нужно проверять явно (например, если
+`unitGuid` не подходит под величину, закреплённую за атрибутом в схеме Loodsman).
 
 ### Метаданные
 

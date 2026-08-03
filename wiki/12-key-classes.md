@@ -185,6 +185,40 @@ context.runBomMaterialsMigration()
 println("Миграция материалов по КД (DS) завершена")
 ```
 
+---
+
+### runBlanksMigration()
+
+**Файл:** `migration/BlanksEngine.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun MigrationContext.runBlanksMigration()
+```
+
+**Описание:** Независимый поток от `runMaterialsMigration()` — на каждого кандидата
+(`MigrationContext.blankCandidates`, собраны в `runObjectsMigration()`) создаёт "Заготовку"
+(`EditObject/new-object`), реверсивную связь деталь↔заготовка (`blanks.linkType`, субъект —
+заготовка), резолвит/связывает "Материал основной" (переиспользует
+`resolveBomMaterialByClassifierCode` из `MaterialsEngine.kt` с целевым типом
+`blanks.materialTarget`), и, если норма расхода настроена, ставит её на связь заготовка→материал
+через `EditObject/up-link-attr-values` (`EditObject.setLinkAttrValues`).
+
+**Использует:**
+- `resolveBomMaterialByClassifierCode` (`MaterialsEngine.kt`) — поиск материала без сравнения
+  обозначения, без фолбэка на создание
+- `resolveUnitId` (`MigrationEngine.kt`) — резолв единицы нормы расхода через
+  `Measure/units-by-designation`
+- `EditObject.setLinkAttrValues` — простановка атрибута "Норма расхода" на связь
+
+**Исключения:**
+- `ResponseException` — при ошибках API Loodsman/ПОЛИНОМ (лог статуса+тела, проброс дальше)
+
+**Пример использования:**
+```kotlin
+context.runBlanksMigration()
+```
+
 ## Доменные модели
 
 ### Settings
@@ -354,6 +388,26 @@ data class BomMaterialCandidate(
     val parentIds: List<Int>,           // ID родительских объектов
     val quantity: Double?,              // Количество
     val unitDesignation: String?,       // Единица измерения
+)
+```
+
+---
+
+### BlankCandidate
+
+**Файл:** `domain/BlankCandidate.kt`
+
+**Описание:** Кандидат на создание "Заготовки" + "Материала основного" (`mapping.blanks`).
+Собирается только когда `materials.classifierCodeColumn` на строке непустой — в отличие от
+`MaterialCandidate`, `classifierCode` здесь не nullable.
+
+```kotlin
+data class BlankCandidate(
+    val detailLoodsmanId: Int,
+    val detailDesignation: String,
+    val classifierCode: String,
+    val rate: Double? = null,             // норма расхода, null = не проставлять
+    val rateUnitDesignation: String? = null,
 )
 ```
 
