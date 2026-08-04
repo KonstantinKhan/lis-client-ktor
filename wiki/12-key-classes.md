@@ -56,14 +56,23 @@ data class MigrationContext(
 
 ```kotlin
 enum class Status {
-    INIT,                     // Начальное состояние
-    SETTINGS_LOADED,          // Настройки загружены
-    CONNECT_CHECKOUT,         // Подключены и заблокированы чекаут
-    OBJECTS_MIGRATED,         // Объекты созданы
-    LINKS_MIGRATED,           // Связи созданы
-    MATERIALS_MIGRATED,       // Материалы мигрированы
-    BOM_MATERIALS_MIGRATED,   // Материалы по КД мигрированы
-    ERROR                     // Ошибка
+    START,
+    EXIST_CONFIG,
+    NOT_CONFIG,
+    LOGIN,
+    LOGIN_SUCCESS,
+    API_ERROR,
+    EMPTY_SESSION,
+    CHECKOUT,
+    CONNECT_CHECKOUT,
+    NOT_ENOUGH_RIGHTS,
+    OBJECTS_MIGRATED,
+    LINKS_MIGRATED,
+    MATERIALS_MIGRATED,
+    BOM_MATERIALS_MIGRATED,
+    BLANKS_MIGRATED,           // Поток D (заготовки) завершён
+    CASTING_BLANKS_MIGRATED,   // Поток E (литейные заготовки: связи) завершён
+    AUX_MATERIALS_MIGRATED     // Поток F (вспомогательные материалы для Детали) завершён
 }
 ```
 
@@ -221,6 +230,133 @@ context.runBlanksMigration()
 
 ---
 
+### runCastingBlanksLinksMigration()
+
+**Файл:** `migration/CastingBlanksEngine.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun MigrationContext.runCastingBlanksLinksMigration()
+```
+
+**Описание:** Поток E ("Литейные заготовки: связи", `mapping.castingBlanks`) — независимый от
+остальных потоков лист Excel, читается напрямую (не через `processObjectRow`, как поток D). Родитель
+резолвится по `classifierId` среди `identifiers` (как child/parent листа "Связи"). На первое
+встреченное значение родителя в группе создаётся "Комплект вспомогательных материалов"
+(`createMaterialsKit`, реверсивная связь на родителя). Для каждой строки материал резолвится в
+ПОЛИНОМ (`resolveBomMaterialByClassifierCode`) с веткой по "Тип материала"
+(Образец/Основной/Вспомогательный → пропуск/`materialTarget`/`auxMaterialTarget`), линкуется к
+комплекту прямой связью, на связь ставятся атрибуты "Норма расхода" и "Цех-потребитель"
+(`EditObject/up-link-attr-values`, ОБА — атрибуты связи, не объекта).
+
+**Использует:**
+- `createMaterialsKit` (`MaterialsKitEngine.kt`) — создание комплекта + реверсивная связь
+- `resolveBomMaterialByClassifierCode`/`resolvePropertyDefinitionByAbsoluteCode`/
+  `resolveSearchScope` (`MaterialsEngine.kt`)
+- `resolveUnitId` (`MigrationEngine.kt`) с тай-брейком `"Масса"` (см. [[03-external-api-quirks.md]])
+- `resolveLinkUnitDesignation` (`LinkUnitResolver.kt`)
+
+**Исключения:**
+- `ResponseException` — при ошибках API Loodsman/ПОЛИНОМ (лог статуса+тела, проброс дальше)
+
+**Пример использования:**
+```kotlin
+context.runCastingBlanksLinksMigration()
+```
+
+---
+
+### runAuxMaterialsMigration()
+
+**Файл:** `migration/AuxMaterialsEngine.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun MigrationContext.runAuxMaterialsMigration()
+```
+
+**Описание:** Поток F ("Вспомогательные материалы для Детали", `mapping.auxMaterials`) —
+архитектурно идентичен потоку E (`runCastingBlanksLinksMigration()`), тот же
+`createMaterialsKit`/`resolveBomMaterialByClassifierCode`, но БЕЗ ветвления по типу материала
+(всегда `auxMaterials.materialTarget`) и с колонками родителя/материала, резолвимыми по имени
+(`RowView.value`), а не по индексу столбца.
+
+**Использует:** те же функции, что `runCastingBlanksLinksMigration()`.
+
+**Исключения:**
+- `ResponseException` — при ошибках API Loodsman/ПОЛИНОМ (лог статуса+тела, проброс дальше)
+
+**Пример использования:**
+```kotlin
+context.runAuxMaterialsMigration()
+```
+
+---
+
+### createMaterialsKit()
+
+**Файл:** `migration/MaterialsKitEngine.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun MigrationContext.createMaterialsKit(
+    parent: Identifier,
+    setTarget: String,
+    setState: String,
+    setLinkType: String,
+    setsCreated: AtomicInteger,
+    setLinksCreated: AtomicInteger,
+    setFailures: AtomicInteger,
+): Int?
+```
+
+**Описание:** Общий приём "создать Комплект вспомогательных материалов на родителя + реверсивная
+связь на родителя", вынесенный из `CastingBlanksEngine.kt` в отдельный файл, чтобы переиспользовать
+в `AuxMaterialsEngine.kt` (потоки E и F создают один и тот же тип объекта Loodsman тем же
+способом — разница только в источнике строк Excel и в резолве материалов). Параметризован голыми
+строками (`setTarget`/`setState`/`setLinkType`), а не общим объектом настроек — единственная общая
+часть между `CastingBlanksSettings`/`AuxMaterialsSettings`. `keyAttribute` комплекта =
+`parent.designation`, с фолбэком на `parent.classifierId.toString()`, если designation пуст.
+
+**Пример использования:**
+```kotlin
+val kitId = createMaterialsKit(parent, castingBlanks.setTarget, castingBlanks.setState,
+    castingBlanks.setLinkType, setsCreated, setLinksCreated, setFailures)
+```
+
+---
+
+### callPolynom()
+
+**Файл:** `migration/PolynomAuthRetry.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun <T> MigrationContext.callPolynom(block: suspend (accessToken: String) -> T): T
+```
+
+**Описание:** Оборачивает один вызов ПОЛИНОМ — реальный инцидент: `access_token` живёт 600с,
+на длинной миграции протухает посреди прогона, сервер отвечает `401` на любой следующий вызов (см.
+[[03-external-api-quirks.md]]). Ловит `ResponseException` со статусом `401`, обновляет токен через
+`polynomClient.login.updateToken(accessToken, refreshToken)`, повторяет `block` РОВНО один раз с
+новым токеном. Обёрнуты ВСЕ вызовы `polynomClient.*` в движке (`MigrationEngine.kt`,
+`MaterialsEngine.kt`, `AnalogGroupsEngine.kt`) — 19 точек вызова.
+
+**Использует:**
+- `MigrationContext.polynomTokenMutex` (через приватную `refreshPolynomToken`) — coalesce
+  конкурентных обновлений: если к моменту захвата лока `polynomAccessToken` уже не равен значению,
+  с которым стартовал текущий вызов, значит другая корутина уже обновила токен — используется он,
+  без второго сетевого запроса на обновление.
+
+**Пример использования:**
+```kotlin
+val found = callPolynom { token ->
+    polynomClient.search.searchByStringProperty(token, scope, propertyDefinition, value)
+}
+```
+
+---
+
 ### classifyCreatedObjects()
 
 **Файл:** `migration/MigrationEngine.kt`
@@ -290,16 +426,25 @@ data class Connection(
 
 ### Mapping
 
-**Файл:** `domain/Mapping.kt`
+**Файл:** `mapping/Mapping.kt`
 
-**Описание:** Конфигурация маппинга Excel → Loodsman.
+**Описание:** Конфигурация маппинга Excel → Loodsman. Актуальный состав (обновлено по факту кода,
+предыдущая версия этого раздела была устаревшей заготовкой):
 
 ```kotlin
 data class Mapping(
+    val source: Source,
     val objectsSheet: ObjectsSheet,
     val linksSheet: LinksSheet,
+    val identifierColumn: String,
+    val attributes: List<Attribute>,
     val types: List<MappingElement>,
-    val materials: MaterialsHierarchy? = null
+    val materials: MaterialsSettings,
+    val bomMaterials: BomMaterialsSettings = BomMaterialsSettings.None,
+    val analogGroups: AnalogGroupsSettings = AnalogGroupsSettings.None,
+    val blanks: BlanksSettings = BlanksSettings.None,
+    val castingBlanks: CastingBlanksSettings = CastingBlanksSettings.None,
+    val auxMaterials: AuxMaterialsSettings = AuxMaterialsSettings.None
 )
 ```
 
@@ -446,6 +591,69 @@ data class BlankCandidate(
 
 ---
 
+### CastingBlanksSettings / AuxMaterialsSettings
+
+**Файлы:** `domain/CastingBlanksSettings.kt`, `domain/AuxMaterialsSettings.kt`
+
+**Описание:** Настройки потоков E/F (см. [[04-business-logic.md]], [[05-settings-reference.md]]).
+`CastingBlanksSettings` реализует `DataSheet` (координаты листа + бизнес-поля в одном классе, тот
+же приём, что `LinksSheet`), `parentColumn`/`childColumn` — по ИНДЕКСУ столбца.
+`AuxMaterialsSettings` — то же самое, но `parentColumn`/`childColumn` — ИМЕНА столбцов (резолв через
+`RowView`, не `row.cells.getOrNull(index)`), и без `materialTypeColumn`/`auxMaterialTarget` — поток F
+не ветвится по типу материала.
+
+```kotlin
+data class CastingBlanksSettings(
+    override val name: String = "",
+    override val rawHeadersRow: Int = -1,
+    val rawParentColumnIndex: Int = -1,
+    val rawChildColumnIndex: Int = -1,
+    val quantityColumn: String = "",
+    val unitColumn: String = "",
+    val workshopColumn: String = "",
+    val materialTypeColumn: String = "",
+    val setTarget: String = "",        // "" выключает поток целиком
+    val setState: String = "",
+    val setLinkType: String = "",
+    val materialTarget: String = "",
+    val auxMaterialTarget: String = "",
+    val materialLinkType: String = "",
+    val rateAttribute: String = "",
+    val workshopAttribute: String = "",
+) : DataSheet
+```
+
+`setTarget.isBlank()` — тумблер потока целиком, тот же паттерн, что `BlanksSettings.target`.
+
+---
+
+### CastingBlankLinkCandidate / AuxMaterialLinkCandidate
+
+**Файлы:** `domain/CastingBlankLinkCandidate.kt`, `domain/AuxMaterialLinkCandidate.kt`
+
+**Описание:** Одна строка своего листа Excel (потоки E/F). Родитель НЕ хранится в кандидате —
+кандидаты группируются по `classifierId` родителя (`Map<Long, MutableList<...>>` в движке), сам
+родитель резолвится в `Identifier` один раз на группу.
+
+```kotlin
+data class CastingBlankLinkCandidate(
+    val childClassifierCode: String,
+    val materialType: String?,          // "Образец"/"Основной"/"Вспомогательный" — только поток E
+    val quantity: Double? = null,
+    val unitDesignation: String? = null,
+    val workshop: String? = null,
+)
+
+data class AuxMaterialLinkCandidate(
+    val childClassifierCode: String,
+    val quantity: Double? = null,       // без materialType — поток F не ветвится
+    val unitDesignation: String? = null,
+    val workshop: String? = null,
+)
+```
+
+---
+
 ### AnalogGroupCandidate
 
 **Файл:** `domain/AnalogGroupCandidate.kt`
@@ -484,14 +692,20 @@ data class ObjectClassificationCandidate(
 
 **Файл:** `domain/Identifier.kt`
 
-**Описание:** Идентификатор созданного объекта.
+**Описание:** Идентификатор созданного объекта — резолвится по `classifierId` листом "Связи" и
+потоками E/F (свои листы Excel). Актуальный состав (обновлено по факту кода):
 
 ```kotlin
 data class Identifier(
-    val classifierId: Int?,             // ID классификатора (из Excel)
-    val loodsmanId: Int,                // ID в Loodsman
-    val isFolder: Boolean,              // Это папка
-    val children: MutableList<Identifier> = mutableListOf() // Потомки
+    val loodsmanId: Int,
+    val classifierId: Long,
+    // Обозначение объекта (mappingElement.source на его строке "Объекты") — пусто для объектов,
+    // резолвленных через ПОЛИНОМ (resolveViaPolynom). Добавлено для потоков E/F — keyAttribute
+    // комплекта = обозначение родителя, а родитель резолвится не на своей исходной строке Excel,
+    // а по classifierId из совсем другого листа.
+    val designation: String = "",
+    val childLinkType: String? = null,           // см. "Технологические детали" в 04-business-logic.md
+    val childOfSameTypeLinkType: String? = null,
 )
 ```
 
