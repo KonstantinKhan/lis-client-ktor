@@ -418,6 +418,24 @@
       "rateColumn": "Норма расхода",
       "rateUnitColumn": "Единица измерения",
       "rateAttribute": "Норма расхода"
+    },
+    "castingBlanks": {
+      "name": "Литейные заготовки связи",
+      "headersRowIndex": 1,
+      "parentColumnIndex": 1,
+      "childColumnIndex": 2,
+      "quantityColumn": "количество материала в литейной заготовке",
+      "unitColumn": "Ед. изм.",
+      "workshopColumn": "Цех-участок",
+      "materialTypeColumn": "Тип материала",
+      "setTarget": "Комплект вспомогательных материалов",
+      "setState": "Проектирование",
+      "setLinkType": "Потребность в",
+      "materialTarget": "Материал",
+      "auxMaterialTarget": "Материал вспомогательный",
+      "materialLinkType": "Состоит из ...",
+      "rateAttribute": "Норма расхода",
+      "workshopAttribute": "Цех-потребитель"
     }
   }
 }

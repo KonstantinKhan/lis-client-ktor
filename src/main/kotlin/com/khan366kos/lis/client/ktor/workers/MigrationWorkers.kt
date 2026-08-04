@@ -7,6 +7,7 @@ import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.logic.Validator
 import com.khan366kos.lis.client.ktor.migration.runBlanksMigration
 import com.khan366kos.lis.client.ktor.migration.runBomMaterialsMigration
+import com.khan366kos.lis.client.ktor.migration.runCastingBlanksLinksMigration
 import com.khan366kos.lis.client.ktor.migration.runLinksMigration
 import com.khan366kos.lis.client.ktor.migration.runMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runObjectsMigration
@@ -30,6 +31,12 @@ fun ICorChainDsl<MigrationContext>.validateMapping() = worker {
             throw RuntimeException(
                 "В settings.json mapping.blanks.target/materialTarget указывает на тип, " +
                     "отсутствующий среди типов Loodsman"
+            )
+        }
+        if (!validator.isValidCastingBlankTargets()) {
+            throw RuntimeException(
+                "В settings.json mapping.castingBlanks.setTarget/materialTarget/auxMaterialTarget " +
+                    "указывает на тип, отсутствующий среди типов Loodsman"
             )
         }
     }
@@ -106,6 +113,21 @@ fun ICorChainDsl<MigrationContext>.migrateBlanks() = worker {
         // Как и в migrateMaterials()/migrateBomMaterials() — статус+тело ответа Полином печатаются
         // внутри runBlanksMigration(), except{} тут не suspend.
         System.err.println("Ошибка миграции заготовок: ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateCastingBlanks() = worker {
+    on { status == Status.BLANKS_MIGRATED }
+    handle {
+        runCastingBlanksLinksMigration()
+        status = Status.CASTING_BLANKS_MIGRATED
+        println("Миграция литейных заготовок (связи) завершена")
+    }
+    except { e ->
+        // Как и в migrateBlanks() — статус+тело ответа печатаются внутри
+        // runCastingBlanksLinksMigration(), except{} тут не suspend.
+        System.err.println("Ошибка миграции литейных заготовок: ${e.message}")
         throw e
     }
 }

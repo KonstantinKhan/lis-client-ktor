@@ -21,6 +21,18 @@ class Validator(
         val typeNames = types.mapToSet { it.name }
         return blanks.target in typeNames && blanks.materialTarget in typeNames
     }
+
+    // mapping.castingBlanks выключен целиком, если setTarget пуст (см. CastingBlanksSettings) —
+    // тот же паттерн, что isValidBlankTargets(). auxMaterialTarget опционален — фича работает и
+    // без "Материал вспомогательный", если в данных нет строк "Тип материала"="Вспомогательный".
+    fun isValidCastingBlankTargets(): Boolean {
+        val castingBlanks = settings.mapping.castingBlanks
+        if (castingBlanks.setTarget.isBlank()) return true
+        val typeNames = types.mapToSet { it.name }
+        return castingBlanks.setTarget in typeNames &&
+            castingBlanks.materialTarget in typeNames &&
+            (castingBlanks.auxMaterialTarget.isBlank() || castingBlanks.auxMaterialTarget in typeNames)
+    }
 }
 
 inline fun <T, R> List<T>.mapToSet(transform: (T) -> R): Set<R> {

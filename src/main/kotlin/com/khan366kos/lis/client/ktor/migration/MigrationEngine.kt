@@ -666,6 +666,7 @@ private suspend fun MigrationContext.processObjectRow(
             Identifier(
                 loodsmanId = loodsmanId,
                 classifierId = classifierIdForRow,
+                designation = row.value(mappingElement.source) ?: "",
                 childLinkType = mappingElement.childLinkType,
                 childOfSameTypeLinkType = mappingElement.childOfSameTypeLinkType,
             )
@@ -771,4 +772,6 @@ private suspend fun MigrationContext.linkObjects(
     false
 }
 
-private fun MigrationContext.excelInputStream() = File(settings.mapping.source.path).inputStream()
+// Без private — переиспользуется в CastingBlanksEngine.kt (свой отдельный лист Excel, тот же
+// источник settings.mapping.source).
+fun MigrationContext.excelInputStream() = File(settings.mapping.source.path).inputStream()
