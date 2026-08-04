@@ -436,6 +436,22 @@
       "materialLinkType": "Состоит из ...",
       "rateAttribute": "Норма расхода",
       "workshopAttribute": "Цех-потребитель"
+    },
+    "auxMaterials": {
+      "name": "Вспомогательные материалы",
+      "headersRowIndex": 1,
+      "parentColumn": "Код классификатора ДСЕ",
+      "childColumn": "Код классификатора материала",
+      "quantityColumn": "Кол-во",
+      "unitColumn": "Ед.изм",
+      "workshopColumn": "Цех-участок",
+      "setTarget": "Комплект вспомогательных материалов",
+      "setState": "Проектирование",
+      "setLinkType": "Потребность для",
+      "materialTarget": "Материал вспомогательный",
+      "materialLinkType": "Состоит из ...",
+      "rateAttribute": "Норма расхода",
+      "workshopAttribute": "Цех-потребитель"
     }
   }
 }

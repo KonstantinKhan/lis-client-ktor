@@ -11,6 +11,7 @@ import com.khan366kos.lis.client.ktor.repl.ReplStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
 
 data class MigrationContext(
@@ -38,6 +39,11 @@ data class MigrationContext(
     var polynomAccessToken: String = "",
     var polynomRefreshToken: String = "",
     var polynomLoggedIn: Boolean = false,
+    // access_token ПОЛИНОМ живёт 600с (см. TokenPairDto.expiresIn) — при долгой миграции токен
+    // протухает посреди прогона. Мьютекс coalesce-ит конкурентное обновление токена по 401
+    // (см. migration/PolynomAuthRetry.kt): первая поймавшая 401 корутина обновляет токен под
+    // локом, остальные видят уже свежий polynomAccessToken и не шлют повторный запрос обновления.
+    val polynomTokenMutex: Mutex = Mutex(),
     val materialCandidates: MutableList<MaterialCandidate> = mutableListOf(),
     // Кандидаты материалов-заменителей (mapping.materials.substituteDrawingDesignationColumn) —
     // отдельный от materialCandidates список: если резолвить их в одной группе дедупликации по

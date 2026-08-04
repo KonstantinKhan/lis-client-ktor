@@ -2,6 +2,7 @@ package com.khan366kos.lis.client.ktor.mapping
 
 import com.khan366kos.lis.client.ktor.domain.AnalogGroupsSettings
 import com.khan366kos.lis.client.ktor.domain.Attribute
+import com.khan366kos.lis.client.ktor.domain.AuxMaterialsSettings
 import com.khan366kos.lis.client.ktor.domain.BlanksSettings
 import com.khan366kos.lis.client.ktor.domain.BomMaterialsSettings
 import com.khan366kos.lis.client.ktor.domain.CastingBlanksSettings
@@ -24,7 +25,8 @@ data class Mapping(
     val bomMaterials: BomMaterialsSettings = BomMaterialsSettings.None,
     val analogGroups: AnalogGroupsSettings = AnalogGroupsSettings.None,
     val blanks: BlanksSettings = BlanksSettings.None,
-    val castingBlanks: CastingBlanksSettings = CastingBlanksSettings.None
+    val castingBlanks: CastingBlanksSettings = CastingBlanksSettings.None,
+    val auxMaterials: AuxMaterialsSettings = AuxMaterialsSettings.None
 ) {
     companion object {
         val None = Mapping(

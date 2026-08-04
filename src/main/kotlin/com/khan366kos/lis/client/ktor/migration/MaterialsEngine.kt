@@ -373,7 +373,7 @@ private suspend fun MigrationContext.resolveOrCreateMaterial(
     return elementCacheMutex.withLock {
         elementCache[key]?.let { return@withLock it }
 
-        val location = polynomClient.classification.getLocation(polynomAccessToken, element)
+        val location = callPolynom { token -> polynomClient.classification.getLocation(token, element) }
         val created = loodsmanClient.editObject.createBoObject(
             sessionId,
             CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)
@@ -393,12 +393,14 @@ private suspend fun MigrationContext.findElementByClassifierCode(
     searchScope: IdentifiableObjectDto,
 ): IdentifiableObjectDto? {
     val code = candidate.classifierCode?.takeIf { it.isNotBlank() } ?: return null
-    val found = polynomClient.search.searchByStringProperty(
-        accessToken = polynomAccessToken,
-        scope = searchScope,
-        propertyDefinition = classifierCodeProperty,
-        value = code,
-    ).firstOrNull() ?: return null
+    val found = callPolynom { token ->
+        polynomClient.search.searchByStringProperty(
+            accessToken = token,
+            scope = searchScope,
+            propertyDefinition = classifierCodeProperty,
+            value = code,
+        )
+    }.firstOrNull() ?: return null
 
     if (found.name != candidate.drawingDesignation) return null
     return IdentifiableObjectDto(found.objectId, found.typeId)
@@ -419,11 +421,11 @@ private suspend fun MigrationContext.findOrCreateElementInHierarchy(
     // существующий элемент и обе создать новый (дубль в Полином либо гонка на стороне Loodsman
     // при последующем createBoObject с одинаковым location).
     return elementCreationMutex.withLock {
-        val existing = polynomClient.classification.getElementsByGroup(polynomAccessToken, group)
+        val existing = callPolynom { token -> polynomClient.classification.getElementsByGroup(token, group) }
             .firstOrNull { it.name == designation }
         if (existing != null) return@withLock IdentifiableObjectDto(existing.objectId, existing.typeId)
 
-        polynomClient.classification.createElement(polynomAccessToken, group, designation)
+        callPolynom { token -> polynomClient.classification.createElement(token, group, designation) }
     }
 }
 
@@ -440,7 +442,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
 
         val hierarchy = settings.mapping.materials.hierarchy
 
-        val reference = polynomClient.classification.getAllReferences(polynomAccessToken)
+        val reference = callPolynom { token -> polynomClient.classification.getAllReferences(token) }
             .firstOrNull { it.name == hierarchy.referenceName }
             ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
             ?: throw IllegalStateException(
@@ -448,7 +450,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
                     "вместе с правилом связывания типа, программное создание не подхватывается Loodsman"
             )
 
-        val catalog = polynomClient.classification.getCatalogsByReference(polynomAccessToken, reference)
+        val catalog = callPolynom { token -> polynomClient.classification.getCatalogsByReference(token, reference) }
             .firstOrNull { it.name == hierarchy.catalogName }
             ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
             ?: throw IllegalStateException(
@@ -456,7 +458,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
                     "должен быть создан вручную"
             )
 
-        val group = polynomClient.classification.getGroupsByCatalog(polynomAccessToken, catalog)
+        val group = callPolynom { token -> polynomClient.classification.getGroupsByCatalog(token, catalog) }
             .firstOrNull { it.name == hierarchy.groupName }
             ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
             ?: throw IllegalStateException(
@@ -474,7 +476,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
 // fallback-создания недостающих объектов групп аналогов, см. решение пользователя не дублировать
 // настройку).
 suspend fun MigrationContext.resolvePropertyDefinitionByAbsoluteCode(absoluteCode: String): IdentifiableObjectDto {
-    val source = polynomClient.concepts.getPropertySourceByAbsoluteCode(polynomAccessToken, absoluteCode)
+    val source = callPolynom { token -> polynomClient.concepts.getPropertySourceByAbsoluteCode(token, absoluteCode) }
     return IdentifiableObjectDto(source.objectId, source.typeId)
 }
 
@@ -637,21 +639,25 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
     elementCacheMutex: Mutex,
     materialsCreated: AtomicInteger,
 ): Int? {
-    val found = polynomClient.search.searchByStringProperty(
-        accessToken = polynomAccessToken,
-        scope = searchScope,
-        propertyDefinition = classifierCodeProperty,
-        value = classifierCode,
-    ).firstOrNull() ?: return null
+    val found = callPolynom { token ->
+        polynomClient.search.searchByStringProperty(
+            accessToken = token,
+            scope = searchScope,
+            propertyDefinition = classifierCodeProperty,
+            value = classifierCode,
+        )
+    }.firstOrNull() ?: return null
 
     val key = found.objectId to found.typeId
     return elementCacheMutex.withLock {
         elementCache[key]?.let { return@withLock it }
 
-        val location = polynomClient.classification.getLocation(
-            polynomAccessToken,
-            IdentifiableObjectDto(found.objectId, found.typeId)
-        )
+        val location = callPolynom { token ->
+            polynomClient.classification.getLocation(
+                token,
+                IdentifiableObjectDto(found.objectId, found.typeId)
+            )
+        }
         val created = loodsmanClient.editObject.createBoObject(
             sessionId,
             CreateBoObjectInputDto(type = target, location = location, withLinks = false)
@@ -665,22 +671,22 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
 // Без private — переиспользуется в AnalogGroupsEngine.kt, см. resolvePropertyDefinitionByAbsoluteCode выше.
 suspend fun MigrationContext.resolveSearchScope(): IdentifiableObjectDto {
     val referenceName = settings.mapping.materials.codesReferenceName
-    val reference = polynomClient.classification.getAllReferences(polynomAccessToken)
+    val reference = callPolynom { token -> polynomClient.classification.getAllReferences(token) }
         .firstOrNull { it.name == referenceName }
         ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
         ?: throw IllegalStateException("Справочник «$referenceName» не найден в ПОЛИНОМ")
 
-    val catalog = polynomClient.classification.getCatalogsByReference(polynomAccessToken, reference)
+    val catalog = callPolynom { token -> polynomClient.classification.getCatalogsByReference(token, reference) }
         .firstOrNull()
         ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
         ?: throw IllegalStateException("В справочнике «$referenceName» нет ни одного каталога")
 
-    val group = polynomClient.classification.getGroupsByCatalog(polynomAccessToken, catalog)
+    val group = callPolynom { token -> polynomClient.classification.getGroupsByCatalog(token, catalog) }
         .firstOrNull()
         ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
         ?: throw IllegalStateException("В справочнике «$referenceName» нет ни одной группы")
 
-    val concepts = polynomClient.concepts.getConceptsAppointedTo(polynomAccessToken, group)
+    val concepts = callPolynom { token -> polynomClient.concepts.getConceptsAppointedTo(token, group) }
     return concepts.firstOrNull { it.name == ELEMENT_CONCEPT_NAME }
         ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
         ?: throw IllegalStateException(

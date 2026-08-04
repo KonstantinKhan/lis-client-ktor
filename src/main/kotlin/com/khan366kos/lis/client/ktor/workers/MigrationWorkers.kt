@@ -5,6 +5,7 @@ import com.khan366kos.lis.client.ktor.domain.Status
 import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.logic.Validator
+import com.khan366kos.lis.client.ktor.migration.runAuxMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runBlanksMigration
 import com.khan366kos.lis.client.ktor.migration.runBomMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runCastingBlanksLinksMigration
@@ -37,6 +38,12 @@ fun ICorChainDsl<MigrationContext>.validateMapping() = worker {
             throw RuntimeException(
                 "В settings.json mapping.castingBlanks.setTarget/materialTarget/auxMaterialTarget " +
                     "указывает на тип, отсутствующий среди типов Loodsman"
+            )
+        }
+        if (!validator.isValidAuxMaterialTargets()) {
+            throw RuntimeException(
+                "В settings.json mapping.auxMaterials.setTarget/materialTarget указывает на тип, " +
+                    "отсутствующий среди типов Loodsman"
             )
         }
     }
@@ -128,6 +135,21 @@ fun ICorChainDsl<MigrationContext>.migrateCastingBlanks() = worker {
         // Как и в migrateBlanks() — статус+тело ответа печатаются внутри
         // runCastingBlanksLinksMigration(), except{} тут не suspend.
         System.err.println("Ошибка миграции литейных заготовок: ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateAuxMaterials() = worker {
+    on { status == Status.CASTING_BLANKS_MIGRATED }
+    handle {
+        runAuxMaterialsMigration()
+        status = Status.AUX_MATERIALS_MIGRATED
+        println("Миграция вспомогательных материалов завершена")
+    }
+    except { e ->
+        // Как и в migrateCastingBlanks() — статус+тело ответа печатаются внутри
+        // runAuxMaterialsMigration(), except{} тут не suspend.
+        System.err.println("Ошибка миграции вспомогательных материалов: ${e.message}")
         throw e
     }
 }

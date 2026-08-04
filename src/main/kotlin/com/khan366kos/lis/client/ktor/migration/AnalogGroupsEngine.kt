@@ -253,12 +253,14 @@ private suspend fun MigrationContext.resolveOrCreateAnalogFallbackObject(
     materials: MaterialsSettings,
     objectsCreated: AtomicInteger,
 ): Int? {
-    val found = polynomClient.search.searchByStringProperty(
-        accessToken = polynomAccessToken,
-        scope = searchScope,
-        propertyDefinition = classifierCodeProperty,
-        value = classifierCode,
-    ).firstOrNull() ?: return null
+    val found = callPolynom { token ->
+        polynomClient.search.searchByStringProperty(
+            accessToken = token,
+            scope = searchScope,
+            propertyDefinition = classifierCodeProperty,
+            value = classifierCode,
+        )
+    }.firstOrNull() ?: return null
 
     // Реальный инцидент: EditObject/new-object (обычное создание объекта, keyAttribute из
     // "наименование" ПОЛИНОМ) падает 500 "Метод NewObject неприменим для создания
@@ -269,7 +271,7 @@ private suspend fun MigrationContext.resolveOrCreateAnalogFallbackObject(
     // Обозначение при этом берётся не отдельным атрибутом, а автоматически из location-привязки
     // к найденному элементу ПОЛИНОМ (его "наименование") — тот же результат, другим путём.
     val element = IdentifiableObjectDto(found.objectId, found.typeId)
-    val location = polynomClient.classification.getLocation(polynomAccessToken, element)
+    val location = callPolynom { token -> polynomClient.classification.getLocation(token, element) }
     val created = loodsmanClient.editObject.createBoObject(
         sessionId,
         CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)

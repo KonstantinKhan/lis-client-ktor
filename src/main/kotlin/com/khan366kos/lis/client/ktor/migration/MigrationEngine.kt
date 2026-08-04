@@ -106,12 +106,14 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
         byClassifierId.entries.map { (classifierId, group) ->
             async {
                 val found = try {
-                    polynomClient.search.searchByStringProperty(
-                        accessToken = polynomAccessToken,
-                        scope = searchScope,
-                        propertyDefinition = classifierCodeProperty,
-                        value = classifierId.toString(),
-                    ).firstOrNull()
+                    callPolynom { token ->
+                        polynomClient.search.searchByStringProperty(
+                            accessToken = token,
+                            scope = searchScope,
+                            propertyDefinition = classifierCodeProperty,
+                            value = classifierId.toString(),
+                        )
+                    }.firstOrNull()
                 } catch (e: Exception) {
                     failures.incrementAndGet()
                     System.err.println(
@@ -130,9 +132,11 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
                 }
 
                 val location = try {
-                    polynomClient.classification.getLocation(
-                        polynomAccessToken, IdentifiableObjectDto(found.objectId, found.typeId)
-                    )
+                    callPolynom { token ->
+                        polynomClient.classification.getLocation(
+                            token, IdentifiableObjectDto(found.objectId, found.typeId)
+                        )
+                    }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
                     System.err.println(
@@ -490,20 +494,24 @@ private suspend fun MigrationContext.resolvePolynomBackedObjects(candidates: Lis
             async {
                 val target = group.first().target
                 try {
-                    val found = polynomClient.search.searchByStringProperty(
-                        accessToken = polynomAccessToken,
-                        scope = searchScope,
-                        propertyDefinition = classifierCodeProperty,
-                        value = classifierId.toString(),
-                    ).firstOrNull()
+                    val found = callPolynom { token ->
+                        polynomClient.search.searchByStringProperty(
+                            accessToken = token,
+                            scope = searchScope,
+                            propertyDefinition = classifierCodeProperty,
+                            value = classifierId.toString(),
+                        )
+                    }.firstOrNull()
                     if (found == null) {
                         notFoundInPolynom.incrementAndGet()
                         println("'$target': код классификатора '$classifierId' не найден в ПОЛИНОМ, объект не создан")
                         return@async null
                     }
-                    val location = polynomClient.classification.getLocation(
-                        polynomAccessToken, IdentifiableObjectDto(found.objectId, found.typeId)
-                    )
+                    val location = callPolynom { token ->
+                        polynomClient.classification.getLocation(
+                            token, IdentifiableObjectDto(found.objectId, found.typeId)
+                        )
+                    }
                     val created = loodsmanClient.editObject.createBoObject(
                         sessionId,
                         CreateBoObjectInputDto(type = target, location = location, withLinks = false)

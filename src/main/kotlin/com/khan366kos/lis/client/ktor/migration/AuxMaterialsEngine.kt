@@ -1,6 +1,6 @@
 package com.khan366kos.lis.client.ktor.migration
 
-import com.khan366kos.lis.client.ktor.domain.CastingBlankLinkCandidate
+import com.khan366kos.lis.client.ktor.domain.AuxMaterialLinkCandidate
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
@@ -15,77 +15,69 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.atomic.AtomicInteger
 
-private const val MATERIAL_TYPE_SAMPLE = "Образец"
-private const val MATERIAL_TYPE_MAIN = "Основной"
-private const val MATERIAL_TYPE_AUXILIARY = "Вспомогательный"
-
 // Тай-брейк для resolveUnitId (см. MigrationEngine.kt) — НЕ фильтр: обозначение норм расхода не
 // всегда "Масса" (например "м2"/"м3" для других материалов), поэтому величина не режется заранее,
 // только используется, если designation реально неоднозначен между несколькими величинами (как
-// "г" между "Масса" и "Год").
+// "г" между "Масса" и "Год" — см. CastingBlanksEngine.kt, тот же реальный инцидент).
 private const val RATE_MEASURE_TIE_BREAK = "Масса"
 
-// Литейные заготовки: связи (mapping.castingBlanks) — отдельный, независимый от остальных потоков
-// лист Excel. Для первого встреченного значения родителя (parentColumn) создаётся "Комплект
-// вспомогательных материалов" с реверсивной связью на родителя (тот же приём, что "Заготовка для"
-// в BlanksEngine.kt), к комплекту прицепляются "Материал"/"Материал вспомогательный", резолвленные
-// в ПОЛИНОМ по коду классификатора childColumn (тот же resolveBomMaterialByClassifierCode, что
-// использует BlanksEngine.kt).
-suspend fun MigrationContext.runCastingBlanksLinksMigration() {
+// Вспомогательные материалы для Детали (mapping.auxMaterials) — отдельный, независимый от
+// остальных потоков лист Excel, архитектурно аналогичный CastingBlanksEngine.kt ("Литейные
+// заготовки: связи"), но БЕЗ ветвления по типу материала — на каждую строку всегда создаётся один
+// тип объекта, "Материал вспомогательный" (mapping.auxMaterials.materialTarget). Комплект
+// создаётся общим приёмом createMaterialsKit (MaterialsKitEngine.kt), материал резолвится общим
+// resolveBomMaterialByClassifierCode (MaterialsEngine.kt) — тем же путём, что у castingBlanks.
+suspend fun MigrationContext.runAuxMaterialsMigration() {
     try {
-        runCastingBlanksLinksMigrationInternal()
+        runAuxMaterialsMigrationInternal()
     } catch (e: ResponseException) {
         System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
 
-private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
-    val castingBlanks = settings.mapping.castingBlanks
-    if (castingBlanks.setTarget.isBlank()) {
-        println("Литейные заготовки: фича выключена (mapping.castingBlanks.setTarget пуст), пропускаем")
+private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
+    val auxMaterials = settings.mapping.auxMaterials
+    if (auxMaterials.setTarget.isBlank()) {
+        println("Вспомогательные материалы: фича выключена (mapping.auxMaterials.setTarget пуст), пропускаем")
         return
     }
 
-    val rows = ExcelSaxParser().parse(excelInputStream(), castingBlanks.name).toList()
-    val headerRow = rows.firstOrNull { it.rowIndex == castingBlanks.headersRow }
+    val rows = ExcelSaxParser().parse(excelInputStream(), auxMaterials.name).toList()
+    val headerRow = rows.firstOrNull { it.rowIndex == auxMaterials.headersRow }
         ?: throw IllegalStateException(
-            "Не найдена строка заголовков (индекс ${castingBlanks.headersRow}) на листе '${castingBlanks.name}'"
+            "Не найдена строка заголовков (индекс ${auxMaterials.headersRow}) на листе '${auxMaterials.name}'"
         )
     val headerMap = SheetHeaders.build(headerRow.cells)
-    val dataRows = rows.filter { it.rowIndex > castingBlanks.headersRow }
+    val dataRows = rows.filter { it.rowIndex > auxMaterials.headersRow }
 
     val rateReadFailures = AtomicInteger(0)
-    val candidatesByParent = mutableMapOf<Long, MutableList<CastingBlankLinkCandidate>>()
+    val candidatesByParent = mutableMapOf<Long, MutableList<AuxMaterialLinkCandidate>>()
     dataRows.forEach { row ->
-        val parentId = row.cells.getOrNull(castingBlanks.parentColumn)?.trim()?.toLongOrNull() ?: return@forEach
-        val childCode = row.cells.getOrNull(castingBlanks.childColumn)?.trim()?.takeIf { it.isNotEmpty() }
-            ?: return@forEach
         val rowView = RowView(headerMap, row.cells)
+        val parentId = rowView.value(auxMaterials.parentColumn)?.toLongOrNull() ?: return@forEach
+        val childCode = rowView.value(auxMaterials.childColumn) ?: return@forEach
 
-        val materialType = castingBlanks.materialTypeColumn.takeIf { it.isNotBlank() }?.let { rowView.value(it) }
-        val workshop = castingBlanks.workshopColumn.takeIf { it.isNotBlank() }?.let { rowView.value(it) }
+        val workshop = auxMaterials.workshopColumn.takeIf { it.isNotBlank() }?.let { rowView.value(it) }
 
         // Пустая ячейка/не настроенная колонка означает "не проставлять норму" — НЕ "1.0" (как у
-        // linksSheet.quantityColumn/resolveLinkQuantity), тот же приём, что BlanksEngine.kt/
-        // BlankCandidate.rate.
-        val quantity = castingBlanks.quantityColumn.takeIf { it.isNotBlank() }?.let { column ->
+        // linksSheet.quantityColumn/resolveLinkQuantity), тот же приём, что в CastingBlanksEngine.kt.
+        val quantity = auxMaterials.quantityColumn.takeIf { it.isNotBlank() }?.let { column ->
             val parsed = rowView.value(column)?.replace(",", ".")?.toDoubleOrNull()
             if (parsed == null) {
                 rateReadFailures.incrementAndGet()
                 System.err.println(
-                    "Литейные заготовки: норма расхода не прочитана в столбце '$column' (родитель " +
+                    "Вспомогательные материалы: норма расхода не прочитана в столбце '$column' (родитель " +
                         "'$parentId', код классификатора '$childCode') — связь будет создана без нормы"
                 )
             }
             parsed
         }
-        val unitDesignation = resolveLinkUnitDesignation(castingBlanks.unitColumn, emptyList(), rowView)
+        val unitDesignation = resolveLinkUnitDesignation(auxMaterials.unitColumn, emptyList(), rowView)
 
         candidatesByParent.getOrPut(parentId) { mutableListOf() }.add(
-            CastingBlankLinkCandidate(
+            AuxMaterialLinkCandidate(
                 childClassifierCode = childCode,
-                materialType = materialType,
                 quantity = quantity,
                 unitDesignation = unitDesignation,
                 workshop = workshop,
@@ -94,7 +86,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
     }
 
     if (candidatesByParent.isEmpty()) {
-        println("Литейные заготовки: строк-кандидатов нет, пропускаем")
+        println("Вспомогательные материалы: строк-кандидатов нет, пропускаем")
         return
     }
 
@@ -116,14 +108,14 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                 if (parents == null) {
                     parentsNotFound.incrementAndGet()
                     println(
-                        "Литейные заготовки: родитель с кодом классификатора '$parentClassifierId' не найден " +
-                            "среди созданных объектов — группа пропущена целиком"
+                        "Вспомогательные материалы: родитель с кодом классификатора '$parentClassifierId' не " +
+                            "найден среди созданных объектов — группа пропущена целиком"
                     )
                     return@async emptyList()
                 }
                 parents.map { parent ->
                     parent to createMaterialsKit(
-                        parent, castingBlanks.setTarget, castingBlanks.setState, castingBlanks.setLinkType,
+                        parent, auxMaterials.setTarget, auxMaterials.setState, auxMaterials.setLinkType,
                         setsCreated, setLinksCreated, setFailures,
                     )
                 }
@@ -146,8 +138,6 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
         }.awaitAll()
     }.toMap()
 
-    val samplesSkipped = AtomicInteger(0)
-    val unknownMaterialTypes = AtomicInteger(0)
     val materialsCreated = AtomicInteger(0)
     val materialsNotFound = AtomicInteger(0)
     val materialLinksCreated = AtomicInteger(0)
@@ -165,31 +155,10 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
             async {
                 val kitId = kitIdByParentLoodsmanId[parent.loodsmanId] ?: return@async
 
-                val target = when (candidate.materialType?.trim()) {
-                    MATERIAL_TYPE_SAMPLE -> {
-                        samplesSkipped.incrementAndGet()
-                        println(
-                            "Литейные заготовки: '$MATERIAL_TYPE_SAMPLE' не обрабатывается (родитель " +
-                                "${parent.loodsmanId}, код классификатора '${candidate.childClassifierCode}')"
-                        )
-                        return@async
-                    }
-                    MATERIAL_TYPE_MAIN -> castingBlanks.materialTarget
-                    MATERIAL_TYPE_AUXILIARY -> castingBlanks.auxMaterialTarget
-                    else -> {
-                        unknownMaterialTypes.incrementAndGet()
-                        System.err.println(
-                            "Литейные заготовки: неизвестный тип материала '${candidate.materialType}' (родитель " +
-                                "${parent.loodsmanId}, код классификатора '${candidate.childClassifierCode}') — строка пропущена"
-                        )
-                        return@async
-                    }
-                }
-
                 try {
                     val materialId = resolveBomMaterialByClassifierCode(
                         candidate.childClassifierCode,
-                        target,
+                        auxMaterials.materialTarget,
                         classifierCodeProperty,
                         searchScope,
                         elementCache,
@@ -199,7 +168,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                     if (materialId == null) {
                         materialsNotFound.incrementAndGet()
                         println(
-                            "Литейные заготовки: материал не найден в ПОЛИНОМ по коду классификатора " +
+                            "Вспомогательные материалы: материал не найден в ПОЛИНОМ по коду классификатора " +
                                 "'${candidate.childClassifierCode}' (комплект $kitId)"
                         )
                         return@async
@@ -210,19 +179,19 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                         NewLinkInputDto(
                             parentVersionId = kitId,
                             childVersionId = materialId,
-                            linkType = castingBlanks.materialLinkType,
+                            linkType = auxMaterials.materialLinkType,
                         )
                     ).asInt()
                     materialLinksCreated.incrementAndGet()
 
-                    if (castingBlanks.rateAttribute.isNotBlank() && candidate.quantity != null) {
+                    if (auxMaterials.rateAttribute.isNotBlank() && candidate.quantity != null) {
                         val unitId = candidate.unitDesignation?.let { unitById[it] }
                         val results = loodsmanClient.editObject.setLinkAttrValues(
                             sessionId,
                             listOf(
                                 UpLinkAttrValuesInputDto(
                                     linkId = materialLinkId,
-                                    attributeName = castingBlanks.rateAttribute,
+                                    attributeName = auxMaterials.rateAttribute,
                                     attributeValue = candidate.quantity.toString(),
                                     unitGuid = unitId,
                                 )
@@ -235,21 +204,21 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                             rateAttrFailures.incrementAndGet()
                             failed.forEach {
                                 System.err.println(
-                                    "Литейные заготовки: не удалось проставить '${castingBlanks.rateAttribute}' на " +
-                                        "связи $materialLinkId: ${it.errorMessage}"
+                                    "Вспомогательные материалы: не удалось проставить '${auxMaterials.rateAttribute}' " +
+                                        "на связи $materialLinkId: ${it.errorMessage}"
                                 )
                             }
                         }
                     }
 
                     val workshop = candidate.workshop
-                    if (castingBlanks.workshopAttribute.isNotBlank() && !workshop.isNullOrBlank()) {
+                    if (auxMaterials.workshopAttribute.isNotBlank() && !workshop.isNullOrBlank()) {
                         val results = loodsmanClient.editObject.setValues(
                             sessionId,
                             listOf(
                                 UpAttrValuesByIdsInputDto(
                                     versionId = materialId,
-                                    attributeName = castingBlanks.workshopAttribute,
+                                    attributeName = auxMaterials.workshopAttribute,
                                     attributeValue = workshop,
                                 )
                             )
@@ -261,8 +230,8 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                             workshopAttrFailures.incrementAndGet()
                             failed.forEach {
                                 System.err.println(
-                                    "Литейные заготовки: не удалось проставить '${castingBlanks.workshopAttribute}' на " +
-                                        "объекте $materialId: ${it.errorMessage}"
+                                    "Вспомогательные материалы: не удалось проставить '${auxMaterials.workshopAttribute}' " +
+                                        "на объекте $materialId: ${it.errorMessage}"
                                 )
                             }
                         }
@@ -270,7 +239,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                 } catch (e: Exception) {
                     failures.incrementAndGet()
                     System.err.println(
-                        "Литейные заготовки: не удалось создать/связать материал (комплект $kitId, код " +
+                        "Вспомогательные материалы: не удалось создать/связать материал (комплект $kitId, код " +
                             "классификатора '${candidate.childClassifierCode}'): ${e.message}"
                     )
                     (e as? ResponseException)?.let {
@@ -282,16 +251,14 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
     }
 
     println(
-        "Литейные заготовки: групп ${candidatesByParent.size}, родителей не найдено ${parentsNotFound.get()}, " +
-            "создано комплектов ${setsCreated.get()}, связей комплект-родитель ${setLinksCreated.get()}, " +
-            "ошибок комплектов ${setFailures.get()}, образцов пропущено ${samplesSkipped.get()}, " +
-            "неизвестных типов материала ${unknownMaterialTypes.get()}, создано материалов ${materialsCreated.get()}, " +
-            "материал не найден в ПОЛИНОМ ${materialsNotFound.get()}, связей комплект-материал " +
-            "${materialLinksCreated.get()}, норм расхода назначено ${ratesAssigned.get()}, ошибок нормы " +
-            "${rateAttrFailures.get()}, цехов назначено ${workshopsAssigned.get()}, ошибок цеха " +
-            "${workshopAttrFailures.get()}, ошибок нормы (чтение) " +
-            "${rateReadFailures.get()}, обозначение единицы не найдено ${unitsNotFound.get()}, коллизий " +
-            "обозначения ${unitsCollision.get()}, прочих ошибок ${failures.get()}"
+        "Вспомогательные материалы: групп ${candidatesByParent.size}, родителей не найдено " +
+            "${parentsNotFound.get()}, создано комплектов ${setsCreated.get()}, связей комплект-родитель " +
+            "${setLinksCreated.get()}, ошибок комплектов ${setFailures.get()}, создано материалов " +
+            "${materialsCreated.get()}, материал не найден в ПОЛИНОМ ${materialsNotFound.get()}, связей " +
+            "комплект-материал ${materialLinksCreated.get()}, норм расхода назначено ${ratesAssigned.get()}, " +
+            "ошибок нормы ${rateAttrFailures.get()}, цехов назначено ${workshopsAssigned.get()}, ошибок цеха " +
+            "${workshopAttrFailures.get()}, ошибок нормы (чтение) ${rateReadFailures.get()}, обозначение " +
+            "единицы не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}, " +
+            "прочих ошибок ${failures.get()}"
     )
 }
-
