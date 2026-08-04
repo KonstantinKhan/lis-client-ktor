@@ -426,37 +426,41 @@ suspend fun MigrationContext.runLinksMigration() {
 // резолва unit'а материалов по КД, связанных под DS-объектами; тот же реестр Measure/
 // units-by-designation, та же логика "не найдено/коллизия -> null, лог, не ошибка".
 //
-// measureName — опциональный фильтр по имени величины (MeasureUnitOutputDto.measureName).
-// Реальный инцидент: обозначение "г" одновременно существует в величинах "Масса" И "Год" —
-// без фильтра это коллизия (2 совпадения), unit не проставляется вообще. Атрибуты с ЗАРАНЕЕ
-// известной фиксированной величиной (например "Норма расхода" — всегда "Масса", см.
-// BlanksEngine.kt/CastingBlanksEngine.kt) должны передавать её сюда, чтобы отсечь совпадения из
-// других величин ДО проверки на коллизию. Для листа "Связи" (единица измерения ДСЕ — величина
-// заранее не известна, может быть любой) фильтр не передаётся, поведение не меняется.
+// preferredMeasureName — НЕ фильтр (нельзя резать все совпадения по величине заранее: у "Нормы
+// расхода" величина сама по себе не фиксирована, "м2"/"м3" — валидные обозначения ДРУГИХ величин,
+// не "Масса" — их и резать нельзя). Используется только как тай-брейк, когда designation реально
+// неоднозначен (>1 совпадения) — реальный инцидент: "г" одновременно существует в величинах
+// "Масса" И "Год". Если среди совпадений ровно одно с этой величиной — берём его; если совпадений
+// одно и без того (обычный случай, никакой неоднозначности) — оно берётся как раньше, независимо
+// от preferredMeasureName; если неоднозначность не по этой величине (или несколько совпадений С
+// этой величиной) — коллизия как раньше, лог + null.
 suspend fun MigrationContext.resolveUnitId(
     designation: String,
     unitsNotFound: AtomicInteger,
     unitsCollision: AtomicInteger,
-    measureName: String? = null,
+    preferredMeasureName: String? = null,
 ): String? {
-    val allMatches = loodsmanClient.measure.unitsByDesignation(sessionId, designation)
-    val matches = if (measureName == null) allMatches else allMatches.filter { it.measureName == measureName }
-    val measureSuffix = measureName?.let { " (величина '$it')" } ?: ""
+    val matches = loodsmanClient.measure.unitsByDesignation(sessionId, designation)
     return when {
         matches.isEmpty() -> {
             unitsNotFound.incrementAndGet()
-            System.err.println("Единица измерения '$designation'$measureSuffix не найдена в Measure/units-by-designation")
+            System.err.println("Единица измерения '$designation' не найдена в Measure/units-by-designation")
             null
         }
-        matches.size > 1 -> {
-            unitsCollision.incrementAndGet()
-            System.err.println(
-                "Обозначение '$designation'$measureSuffix неоднозначно (${matches.size} совпадений) — " +
-                    "unit для этих связей не проставляется"
-            )
-            null
+        matches.size == 1 -> matches.single().id
+        else -> {
+            val preferred = preferredMeasureName?.let { name -> matches.filter { it.measureName == name } }
+            if (preferred?.size == 1) {
+                preferred.single().id
+            } else {
+                unitsCollision.incrementAndGet()
+                System.err.println(
+                    "Обозначение '$designation' неоднозначно (${matches.size} совпадений в разных величинах) — " +
+                        "unit для этих связей не проставляется"
+                )
+                null
+            }
         }
-        else -> matches.single().id
     }
 }
 
