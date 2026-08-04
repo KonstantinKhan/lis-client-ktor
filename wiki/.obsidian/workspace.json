@@ -11,10 +11,14 @@
             "id": "d502731274f63611",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "type": "markdown",
+              "state": {
+                "file": "02-external-api-principles.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "02-external-api-principles"
             }
           }
         ]
@@ -183,13 +187,14 @@
   },
   "active": "d502731274f63611",
   "lastOpenFiles": [
+    "index.md",
+    "06-glossary.md",
     "15-cor-dsl-guide.md",
     "14-known-issues.md",
     "13-concurrency-guide.md",
     "12-key-classes.md",
     "11-api-reference.md",
     "08-components.md",
-    "index.md",
     "09-setup-and-development.md",
     "wiki/12-key-classes.md",
     "wiki",
