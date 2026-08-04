@@ -39,8 +39,8 @@ data class CastingBlanksSettings(
     // Норма расхода — АТРИБУТ связи комплект -> материал (EditObject/up-link-attr-values), тот же
     // механизм, что BlanksSettings.rateAttribute.
     val rateAttribute: String = "",
-    // Цех-потребитель — АТРИБУТ ОБЪЕКТА материала/материала вспомогательного
-    // (EditObject/up-attr-values-by-ids), НЕ атрибут связи.
+    // Цех-потребитель — АТРИБУТ СВЯЗИ комплект->материал (EditObject/up-link-attr-values), тот же
+    // механизм, что rateAttribute — НЕ атрибут объекта материала.
     val workshopAttribute: String = "",
 ) : DataSheet {
 

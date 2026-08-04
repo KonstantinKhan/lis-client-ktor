@@ -4,7 +4,6 @@ import com.khan366kos.lis.client.ktor.domain.CastingBlankLinkCandidate
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -242,13 +241,18 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                         }
                     }
 
+                    // Цех-потребитель — АТРИБУТ СВЯЗИ "Состоит из ..." (комплект->материал), НЕ
+                    // атрибут объекта материала — тот же механизм и linkId, что у нормы расхода
+                    // чуть выше (реальный инцидент: сначала было по ошибке реализовано через
+                    // up-attr-values-by-ids/versionId материала, Loodsman отвечал 410202 "Атрибут
+                    // не соответствует типу" — атрибут в схеме заведён на связи, не на объекте).
                     val workshop = candidate.workshop
                     if (castingBlanks.workshopAttribute.isNotBlank() && !workshop.isNullOrBlank()) {
-                        val results = loodsmanClient.editObject.setValues(
+                        val results = loodsmanClient.editObject.setLinkAttrValues(
                             sessionId,
                             listOf(
-                                UpAttrValuesByIdsInputDto(
-                                    versionId = materialId,
+                                UpLinkAttrValuesInputDto(
+                                    linkId = materialLinkId,
                                     attributeName = castingBlanks.workshopAttribute,
                                     attributeValue = workshop,
                                 )
@@ -262,7 +266,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                             failed.forEach {
                                 System.err.println(
                                     "Литейные заготовки: не удалось проставить '${castingBlanks.workshopAttribute}' на " +
-                                        "объекте $materialId: ${it.errorMessage}"
+                                        "связи $materialLinkId: ${it.errorMessage}"
                                 )
                             }
                         }
