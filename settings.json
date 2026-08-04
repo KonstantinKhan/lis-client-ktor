@@ -417,7 +417,8 @@
       "materialLinkType": "Изготавливается из ...",
       "rateColumn": "Норма расхода",
       "rateUnitColumn": "Единица измерения",
-      "rateAttribute": "Норма расхода"
+      "rateAttribute": "Норма расхода",
+      "appliesToTargets": ["Деталь", "Технологическая деталь"]
     },
     "castingBlanks": {
       "name": "Литейные заготовки связи",

@@ -645,15 +645,19 @@ private suspend fun MigrationContext.processObjectRow(
     }
 
     // Заготовка + материал основной (mapping.blanks) — независимый поток, добавленный к потоку A
-    // выше: тот же classifierCodeColumn/appliesToTargets (materialTargetObjects), но триггерится
+    // выше: тот же classifierCodeColumn, но собственный список таргетов (blanks.appliesToTargets,
+    // фолбэк на materials.appliesToTargets если не задан — см. BlanksSettings.kt), и триггерится
     // только когда код классификатора на строке реально непустой (в отличие от потока A, где
     // пустой код просто ведёт к фолбэку на создание элемента по имени). blanks.target.isBlank()
     // выключает фичу целиком.
     val blanks = settings.mapping.blanks
+    val blankTargetObjects = createdObjects.filter { (mappingElement, _) ->
+        mappingElement.target in blanks.appliesToTargets.ifEmpty { materials.appliesToTargets }
+    }
     val blankCandidatesForRow = if (blanks.target.isBlank()) {
         emptyList()
     } else {
-        materialTargetObjects.mapNotNull { (mappingElement, loodsmanId) ->
+        blankTargetObjects.mapNotNull { (mappingElement, loodsmanId) ->
             val classifierCode = row.value(materials.classifierCodeColumn)?.takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
             val designation = row.value(mappingElement.source) ?: return@mapNotNull null

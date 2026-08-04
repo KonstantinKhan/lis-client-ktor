@@ -4,9 +4,8 @@ import kotlinx.serialization.Serializable
 
 // Заготовка + материал основной — независимый поток, добавленный к mapping.materials (поток A):
 // та же деталь может получить и "Материал по КД" (напрямую), и "Заготовку" с "Материалом
-// основным". Триггер и код классификатора переиспользуются из mapping.materials
-// (appliesToTargets/classifierCodeColumn) — по решению пользователя не дублировать конфиг под тот
-// же смысл (см. MigrationEngine.kt).
+// основным". Код классификатора переиспользуется из mapping.materials (classifierCodeColumn) —
+// по решению пользователя не дублировать конфиг под тот же смысл (см. MigrationEngine.kt).
 //
 // target.isBlank() выключает фичу целиком — тот же паттерн, что
 // MaterialsSettings.substituteDrawingDesignationColumn == "".
@@ -17,6 +16,12 @@ data class BlanksSettings(
     val linkType: String = "",
     val materialTarget: String = "",
     val materialLinkType: String = "",
+    // Список типов Loodsman (mappingElement.target из mapping.types), для которых собираются
+    // кандидаты на заготовку. Пусто (дефолт) — фолбэк на materials.appliesToTargets (старое
+    // поведение, полностью общий триггер с потоком A). Задан явно — независимый от потока A
+    // список: позволяет включить заготовки для типа (например "Технологическая деталь"), не
+    // включая заодно поток A для того же типа.
+    val appliesToTargets: List<String> = emptyList(),
     // Норма расхода — АТРИБУТ связи заготовка -> материал основной (величина "Масса" в схеме
     // Loodsman, не встроенное количество связи minQuantity/maxQuantity!), ставится отдельным
     // вызовом EditObject/up-link-attr-values (EditObject.setLinkAttrValues), см. BlanksEngine.kt.
