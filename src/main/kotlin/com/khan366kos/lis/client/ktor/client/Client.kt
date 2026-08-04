@@ -49,6 +49,7 @@ class Client(
     val objectInfo = ObjectInfo(client, requestGate)
     val measure = Measure(client, requestGate)
     val objectConfiguration = ObjectConfiguration(client, requestGate)
+    val boReference = BoReference(client, requestGate)
 
     suspend fun user(): HttpResponse = client.get("Auth/current-user")
 

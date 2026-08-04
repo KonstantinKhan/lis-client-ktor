@@ -7,12 +7,14 @@ import com.khan366kos.lis.client.ktor.domain.Identifier
 import com.khan366kos.lis.client.ktor.domain.MappingElement
 import com.khan366kos.lis.client.ktor.domain.MaterialCandidate
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
+import com.khan366kos.lis.client.ktor.domain.ObjectClassificationCandidate
 import com.khan366kos.lis.client.ktor.domain.PolynomBackedObjectCandidate
 import com.khan366kos.lis.client.ktor.domain.UnresolvedAnalogGroupCandidate
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.ReferenceBoVersionInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import kotlinx.coroutines.async
@@ -63,12 +65,112 @@ suspend fun MigrationContext.runObjectsMigration() {
     // runLinksMigration() (следующий шаг пайплайна) увидел их в identifiers как обычные объекты.
     resolvePolynomBackedObjects(results.flatMap { it.polynomBackedCandidates })
 
+    // Классификация в ПОЛИНОМ (BoReference/reference-bo-version) для обычных не-папочных объектов,
+    // созданных через EditObject/new-object — см. classifyCreatedObjects. Объекты через
+    // create-bo-object (resolvePolynomBackedObjects выше, материалы, заготовки) уже привязаны к
+    // ПОЛИНОМ в момент создания, повторная классификация им не нужна.
+    classifyCreatedObjects(results.flatMap { it.classificationCandidates })
+
     println(
         "Объекты: строк ${dataRows.size}, создано объектов ${objectsCreated.get()}, " +
             "с привязкой к классификатору ${created.size}, ошибок ${rowsFailed.get()}, " +
             "DS-объектов ${bomMaterialSpecClassifierIds.size}, " +
             "строк раздела Материалы ${bomMaterialRowClassifierIds.size}, " +
             "кандидатов на заготовки ${blankCandidates.size}"
+    )
+}
+
+// Классифицирует обычные не-папочные объекты (созданы EditObject/new-object, mapping.types[] без
+// resolveViaPolynom) в ПОЛИНОМ: поиск элемента по коду классификатора объекта
+// (mapping.identifierColumn, тот же classifierId, что резолвит структуру BOM) через тот же
+// classifierCodeProperty/searchScope, что materials/resolveViaPolynom (решение пользователя не
+// заводить отдельную настройку под тот же смысл "код классификатора"), затем привязка уже
+// созданной версии Loodsman к найденному location через BoReference/reference-bo-version
+// (boTypeBindingRuleId зафиксирован в 0). Не найдено в ПОЛИНОМ — лог + счётчик, объект остаётся
+// созданным без классификации, миграция продолжается (не ошибка, тот же принцип, что везде в
+// проекте для резолва через ПОЛИНОМ).
+private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<ObjectClassificationCandidate>) {
+    if (candidates.isEmpty()) return
+
+    val materials = settings.mapping.materials
+    val classifierCodeProperty = materials.classifierCodePropertyId
+        ?: resolvePropertyDefinitionByAbsoluteCode(materials.classifierCodePropertyAbsoluteCode)
+    val searchScope = resolveSearchScope()
+
+    val classified = AtomicInteger(0)
+    val notFoundInPolynom = AtomicInteger(0)
+    val failures = AtomicInteger(0)
+    val byClassifierId = candidates.groupBy { it.classifierId }
+
+    coroutineScope {
+        byClassifierId.entries.map { (classifierId, group) ->
+            async {
+                val found = try {
+                    polynomClient.search.searchByStringProperty(
+                        accessToken = polynomAccessToken,
+                        scope = searchScope,
+                        propertyDefinition = classifierCodeProperty,
+                        value = classifierId.toString(),
+                    ).firstOrNull()
+                } catch (e: Exception) {
+                    failures.incrementAndGet()
+                    System.err.println(
+                        "Классификация: не удалось выполнить поиск в ПОЛИНОМ по коду классификатора " +
+                            "'$classifierId' (объекты ${group.map { it.loodsmanId }}): ${e.message}"
+                    )
+                    return@async
+                }
+                if (found == null) {
+                    notFoundInPolynom.incrementAndGet()
+                    println(
+                        "Классификация: код классификатора '$classifierId' не найден в ПОЛИНОМ — объекты " +
+                            "${group.map { it.loodsmanId }} остаются без классификации"
+                    )
+                    return@async
+                }
+
+                val location = try {
+                    polynomClient.classification.getLocation(
+                        polynomAccessToken, IdentifiableObjectDto(found.objectId, found.typeId)
+                    )
+                } catch (e: Exception) {
+                    failures.incrementAndGet()
+                    System.err.println(
+                        "Классификация: не удалось получить location для кода классификатора " +
+                            "'$classifierId' (объекты ${group.map { it.loodsmanId }}): ${e.message}"
+                    )
+                    return@async
+                }
+
+                group.map { candidate ->
+                    async {
+                        try {
+                            loodsmanClient.boReference.referenceBoVersion(
+                                sessionId,
+                                ReferenceBoVersionInputDto(
+                                    versionId = candidate.loodsmanId,
+                                    boTypeBindingRuleId = 0,
+                                    objectLocation = location,
+                                )
+                            )
+                            classified.incrementAndGet()
+                        } catch (e: Exception) {
+                            failures.incrementAndGet()
+                            System.err.println(
+                                "Классификация: не удалось привязать объект ${candidate.loodsmanId} " +
+                                    "(код классификатора '$classifierId') к ПОЛИНОМ: ${e.message}"
+                            )
+                        }
+                    }
+                }.awaitAll()
+            }
+        }.awaitAll()
+    }
+
+    println(
+        "Классификация в ПОЛИНОМ: кандидатов ${candidates.size}, уникальных кодов ${byClassifierId.size}, " +
+            "классифицировано ${classified.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, " +
+            "ошибок ${failures.get()}"
     )
 }
 
@@ -417,6 +519,7 @@ private data class ObjectRowResult(
     val bomMaterialRowClassifierId: Long? = null,
     val polynomBackedCandidates: List<PolynomBackedObjectCandidate> = emptyList(),
     val blankCandidates: List<BlankCandidate> = emptyList(),
+    val classificationCandidates: List<ObjectClassificationCandidate> = emptyList(),
 )
 
 private suspend fun MigrationContext.processObjectRow(
@@ -569,6 +672,17 @@ private suspend fun MigrationContext.processObjectRow(
         }
     }
 
+    // Классификация в ПОЛИНОМ (BoReference/reference-bo-version) — только не-папочные объекты,
+    // созданные здесь обычным EditObject/new-object; папка организационный контейнер, в BOM не
+    // участвует и классифицировать её нечем (см. classifyCreatedObjects в runObjectsMigration).
+    val classificationCandidatesForRow = if (classifierIdForRow == null) {
+        emptyList()
+    } else {
+        nonFolderObjects.map { (_, loodsmanId) ->
+            ObjectClassificationCandidate(loodsmanId = loodsmanId, classifierId = classifierIdForRow)
+        }
+    }
+
     // Признак "у объекта есть собственная конструкторская спецификация" (DS) — см.
     // mapping.bomMaterials в settings.json. specificationConditions не задан вовсе (isConfigured
     // == false) значит фича выключена — Conditions() по умолчанию матчит любую строку, поэтому
@@ -587,6 +701,7 @@ private suspend fun MigrationContext.processObjectRow(
         bomMaterialRowClassifierId,
         polynomBackedCandidatesForRow,
         blankCandidatesForRow,
+        classificationCandidatesForRow,
     )
 }
 
