@@ -22,6 +22,12 @@ private const val MATERIAL_TYPE_SAMPLE = "Образец"
 private const val MATERIAL_TYPE_MAIN = "Основной"
 private const val MATERIAL_TYPE_AUXILIARY = "Вспомогательный"
 
+// Норма расхода — АТРИБУТ величины "Масса" в схеме Loodsman (см. CastingBlanksSettings.rateAttribute)
+// — фиксированная величина для фильтра resolveUnitId (см. MigrationEngine.kt). Реальный инцидент:
+// обозначение "г" одновременно существует в величинах "Масса" И "Год" — без фильтра resolveUnitId
+// считал бы это коллизией и не проставлял unit вовсе.
+private const val RATE_MEASURE_NAME = "Масса"
+
 // Литейные заготовки: связи (mapping.castingBlanks) — отдельный, независимый от остальных потоков
 // лист Excel. Для первого встреченного значения родителя (parentColumn) создаётся "Комплект
 // вспомогательных материалов" с реверсивной связью на родителя (тот же приём, что "Заготовка для"
@@ -134,7 +140,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
     val distinctUnits = candidatesByParent.values.flatten().mapNotNull { it.unitDesignation }.toSet()
     val unitById = coroutineScope {
         distinctUnits.map { designation ->
-            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision) }
+            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision, RATE_MEASURE_NAME) }
         }.awaitAll()
     }.toMap()
 

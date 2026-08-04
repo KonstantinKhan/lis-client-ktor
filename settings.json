@@ -430,7 +430,7 @@
       "materialTypeColumn": "Тип материала",
       "setTarget": "Комплект вспомогательных материалов",
       "setState": "Проектирование",
-      "setLinkType": "Потребность в",
+      "setLinkType": "Потребность для",
       "materialTarget": "Материал",
       "auxMaterialTarget": "Материал вспомогательный",
       "materialLinkType": "Состоит из ...",

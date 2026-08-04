@@ -12,6 +12,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.atomic.AtomicInteger
 
+// Норма расхода — АТРИБУТ величины "Масса" в схеме Loodsman (см. BlanksSettings.rateAttribute) —
+// фиксированная величина для фильтра resolveUnitId (см. MigrationEngine.kt).
+private const val RATE_MEASURE_NAME = "Масса"
+
 // Постобработка после runObjectsMigration(): blankCandidates уже полностью собраны (по одному на
 // каждую строку "Деталь" с непустым mapping.materials.classifierCodeColumn, см.
 // MigrationEngine.processObjectRow). Независимый поток от runMaterialsMigration() (поток A) — по
@@ -59,11 +63,13 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
 
     // Норма расхода (mapping.blanks.rateUnitColumn) — резолв уникальных обозначений один раз,
     // тот же паттерн, что resolveUnitId везде в движке (одно обозначение обычно повторяется на
-    // многих строках).
+    // многих строках). Величина фиксирована ("Масса") — реальный инцидент: обозначение "г"
+    // одновременно существует в величинах "Масса" И "Год", без фильтра resolveUnitId считал бы
+    // это коллизией и не проставлял unit вовсе (см. resolveUnitId в MigrationEngine.kt).
     val distinctRateUnits = blankCandidates.mapNotNull { it.rateUnitDesignation }.toSet()
     val rateUnitById = coroutineScope {
         distinctRateUnits.map { designation ->
-            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision) }
+            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision, RATE_MEASURE_NAME) }
         }.awaitAll()
     }.toMap()
 
