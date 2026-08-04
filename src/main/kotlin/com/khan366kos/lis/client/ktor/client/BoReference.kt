@@ -13,11 +13,14 @@ class BoReference(
 ) {
     // Сопоставление уже созданной версии объекта Loodsman со справочным объектом ПОЛИНОМ:MDM
     // по location — без типизированного тела ответа, swagger не описывает `<` для этого метода
-    // (тот же приём, что EditObject.upLink).
+    // (тот же приём, что EditObject.upLink). С retry на таймаут/5xx (см. retryOnTransientError,
+    // EditObject.createBoObject) — тот же сервер, тот же класс сбоев под нагрузкой.
     suspend fun referenceBoVersion(sessionId: String, data: ReferenceBoVersionInputDto): HttpResponse =
-        requestGate.withPermit {
-            client.postWithSession("BoReference/reference-bo-version", sessionId) {
-                setBody(data)
+        retryOnTransientError {
+            requestGate.withPermit {
+                client.postWithSession("BoReference/reference-bo-version", sessionId) {
+                    setBody(data)
+                }
             }
         }
 }

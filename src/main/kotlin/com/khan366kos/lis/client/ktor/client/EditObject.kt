@@ -63,11 +63,16 @@ class EditObject(
         }
 
     // Создаёт объект интегрированного с ПОЛИНОМ:MDM типа: создание и связывание с элементом
-    // Полином (по его location-строке) происходят за один нативный вызов Loodsman.
+    // Полином (по его location-строке) происходят за один нативный вызов Loodsman. С retry на
+    // таймаут/5xx (см. retryOnTransientError) — реальный инцидент, сервер под нагрузкой иногда не
+    // укладывается в requestTimeoutMillis; retry, а не withPermit, снаружи — permit не держится
+    // на время задержки между попытками.
     suspend fun createBoObject(sessionId: String, data: CreateBoObjectInputDto): Int =
-        requestGate.withPermit {
-            client.postWithSession("EditObject/create-bo-object", sessionId) {
-                setBody(data)
-            }.body()
+        retryOnTransientError {
+            requestGate.withPermit {
+                client.postWithSession("EditObject/create-bo-object", sessionId) {
+                    setBody(data)
+                }.body()
+            }
         }
 }
