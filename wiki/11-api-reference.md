@@ -33,6 +33,12 @@
 | POST | `/EditObject/create-bo-object` | `client/EditObject.kt` | Создать бизнес-объект |
 | POST | `/EditObject/insert-object` | `client/Client.kt` | Вставить объект (гибкий) |
 
+### Справочные объекты (ПОЛИНОМ)
+
+| Метод | Эндпоинт | Файл | Описание |
+|-------|----------|------|----------|
+| POST | `/BoReference/reference-bo-version` | `client/BoReference.kt` | Привязать уже созданную версию объекта к элементу ПОЛИНОМ по `location` |
+
 ### Метаданные
 
 | Метод | Эндпоинт | Файл | Описание |
@@ -258,6 +264,33 @@ data class UpLinkAttrValuesOutputDto(
 
 `isSuccess=false` — не исключение, обычный 200 с телом; нужно проверять явно (например, если
 `unitGuid` не подходит под величину, закреплённую за атрибутом в схеме Loodsman).
+
+### Справочные объекты (ПОЛИНОМ)
+
+#### POST `/BoReference/reference-bo-version`
+
+**Файл:** `client/BoReference.kt` (`referenceBoVersion`)
+
+Сопоставление уже созданной версии объекта Loodsman (`EditObject/new-object`) со справочным
+объектом ПОЛИНОМ:MDM по `location` — в отличие от `EditObject/create-bo-object`, который создаёт
+объект и привязывает его к ПОЛИНОМ за один вызов, этот метод используется для объектов, уже
+существующих в Loodsman без привязки. Используется в классификации объектов на шаге "Объекты",
+см. [[04-business-logic.md]], [[12-key-classes.md]] (`classifyCreatedObjects`).
+
+**Входные данные:**
+```kotlin
+data class ReferenceBoVersionInputDto(
+    val versionId: Int,             // Loodsman id версии объекта
+    val boTypeBindingRuleId: Int = 0, // зафиксирован в 0 в проекте, не вынесен в настройки
+    val objectLocation: String,     // location найденного элемента ПОЛИНОМ
+)
+```
+
+**Выходные данные:** без типизированного тела — swagger не описывает `<` для этого метода (тот
+же приём, что у `EditObject/up-link`).
+
+С retry на таймаут/5xx — см. `retryOnTransientError()` в [[12-key-classes.md]] и реальный
+инцидент в [[03-external-api-quirks.md]].
 
 ### Метаданные
 

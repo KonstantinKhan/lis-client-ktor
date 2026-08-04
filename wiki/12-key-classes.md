@@ -219,6 +219,39 @@ suspend fun MigrationContext.runBlanksMigration()
 context.runBlanksMigration()
 ```
 
+---
+
+### classifyCreatedObjects()
+
+**Файл:** `migration/MigrationEngine.kt`
+
+**Сигнатура:**
+```kotlin
+private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<ObjectClassificationCandidate>)
+```
+
+**Описание:** Классифицирует в ПОЛИНОМ:MDM обычные не-папочные объекты, созданные на шаге
+"Объекты" через `EditObject/new-object` (`mapping.types[]` без `resolveViaPolynom`) — кандидаты
+собираются в `processObjectRow` и передаются сюда из `runObjectsMigration()`, после
+`resolvePolynomBackedObjects(...)`. Группирует кандидатов по `classifierId` (один поиск в ПОЛИНОМ
+на уникальный код), затем для каждого `loodsmanId` группы отдельным вызовом
+`BoReference/reference-bo-version` (`EditObject.boReference.referenceBoVersion`) привязывает
+версию Loodsman к найденному `location`. Не найдено в ПОЛИНОМ / ошибка на любом шаге — лог +
+счётчик, объект остаётся созданным без классификации, исключение не пробрасывается (не должно
+прерывать обработку остальных кандидатов).
+
+**Использует:**
+- `resolvePropertyDefinitionByAbsoluteCode`/`resolveSearchScope` (`MaterialsEngine.kt`) — тот же
+  `classifierCodeProperty`/scope, что у материалов и `resolvePolynomBackedObjects`
+- `polynomClient.search.searchByStringProperty`, `polynomClient.classification.getLocation`
+- `loodsmanClient.boReference.referenceBoVersion` (`client/BoReference.kt`, см.
+  [[11-api-reference.md]])
+
+**Пример использования:**
+```kotlin
+classifyCreatedObjects(results.flatMap { it.classificationCandidates })
+```
+
 ## Доменные модели
 
 ### Settings
@@ -425,6 +458,23 @@ data class AnalogGroupCandidate(
     val variantNumber: Int,             // Номер варианта
     val isBasic: Boolean,               // Базовый вариант
     val parentIds: List<Int>            // ID родительских объектов
+)
+```
+
+---
+
+### ObjectClassificationCandidate
+
+**Файл:** `domain/ObjectClassificationCandidate.kt`
+
+**Описание:** Кандидат на классификацию в ПОЛИНОМ (`BoReference/reference-bo-version`) — не-папочный
+объект, созданный обычным `EditObject/new-object`. Собирается в `processObjectRow`, обрабатывается
+`classifyCreatedObjects()`.
+
+```kotlin
+data class ObjectClassificationCandidate(
+    val loodsmanId: Int,                // Loodsman id созданного объекта
+    val classifierId: Long,             // код классификатора объекта (mapping.identifierColumn)
 )
 ```
 
@@ -663,6 +713,31 @@ suspend fun resolveLinkUnitDesignation(
 **Описание:** Резолвит единицу измерения связи.
 
 **Возвращает:** Обозначение единицы или null.
+
+---
+
+### retryOnTransientError()
+
+**Файл:** `client/Helpers.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun <T> retryOnTransientError(
+    times: Int = 3,
+    initialDelayMs: Long = 1_000,
+    block: suspend () -> T
+): T
+```
+
+**Описание:** Повтор на транзиентных сбоях (таймаут, 5xx) с экспоненциальным backoff — реальный
+инцидент: `EditObject/create-bo-object` под нагрузкой иногда не укладывается в
+`requestTimeoutMillis`, см. [[03-external-api-quirks.md]]. Ловит только
+`HttpRequestTimeoutException` и `ResponseException` со статусом 5xx; остальные исключения
+пробрасываются без повтора. Используется **только** в `EditObject.createBoObject` и
+`BoReference.referenceBoVersion` (`client/EditObject.kt`, `client/BoReference.kt`) — вызов
+находится снаружи `requestGate.withPermit`, чтобы не держать permit семафора на время задержки
+между попытками. Осознанно не применяется к `new-object`/`new-link`: таймаут не гарантирует, что
+запрос не выполнился на сервере, повтор неидемпотентного вызова может создать дубль.
 
 ---
 
