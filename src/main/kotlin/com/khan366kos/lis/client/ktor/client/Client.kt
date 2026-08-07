@@ -3,10 +3,13 @@ package com.khan366kos.lis.client.ktor.client
 import com.khan366kos.lis.client.ktor.client.getWithSession
 import com.khan366kos.lis.client.ktor.client.postWithSession
 import com.khan366kos.lis.client.ktor.domain.Connection
+import com.khan366kos.lis.client.ktor.logging.fileLogger
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -39,6 +42,16 @@ class Client(
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
+        }
+        // Полный трейс вызовов Loodsman API в loodsman-api.log — см. ApiFileLogger. Auth/login
+        // исключён из фильтра целиком (не залогирован ни один байт этого запроса), т.к. его тело
+        // содержит пароль в открытом виде; сессионный заголовок замаскирован на случай, если
+        // логировать его всё же понадобится в будущем.
+        install(Logging) {
+            logger = fileLogger("loodsman-api.log")
+            level = LogLevel.ALL
+            sanitizeHeader { header -> header.equals("Web-Loodsman-Session", ignoreCase = true) }
+            filter { request -> !request.url.encodedPath.contains("Auth/login") }
         }
     }
 

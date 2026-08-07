@@ -27,7 +27,6 @@ fun ICorChainDsl<MigrationContext>.checkout() = worker {
                 }.fold(
                     onSuccess = {
                         this.checkout = it
-                        println("Checkout $checkout")
                         status = Status.CHECKOUT
                     },
                     onFailure = {
@@ -43,9 +42,6 @@ fun ICorChainDsl<MigrationContext>.checkout() = worker {
 fun ICorChainDsl<MigrationContext>.connectCheckout() = worker {
     on { status == Status.CHECKOUT }
     handle {
-        println("handle")
-        println("checkout: $checkout")
-        println("dbName: ${settings.connection.dbName}")
         runCatching {
             apiScope.async {
                 loodsmanClient.checkout.connectToCheckout(
@@ -56,7 +52,6 @@ fun ICorChainDsl<MigrationContext>.connectCheckout() = worker {
             }.await()
         }.fold(
             onSuccess = {
-                println("success")
                 val isAdmin = it == 1
                 if (isAdmin) {
                     // replStatus остаётся AUTH: следующий шаг — вход в ПОЛИНОМ (PolynomInit,
@@ -64,7 +59,7 @@ fun ICorChainDsl<MigrationContext>.connectCheckout() = worker {
                     // него ReplConsole переходит в COMMAND (см. workers/PolynomLoginWorkers.kt).
                     status = Status.CONNECT_CHECKOUT
                 }
-                println("Подключение от имени админа")
+                println("Подключение от администратора")
             },
             onFailure = {
                 println("Ошибка: ${it.message}")

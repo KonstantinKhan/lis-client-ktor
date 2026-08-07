@@ -1,11 +1,14 @@
 package com.khan366kos.lis.client.ktor.polynom.client
 
 import com.khan366kos.lis.client.ktor.domain.PolynomConnection
+import com.khan366kos.lis.client.ktor.logging.fileLogger
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.url
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.sync.Semaphore
@@ -38,6 +41,15 @@ class PolynomClient(
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
+        }
+        // Полный трейс вызовов ПОЛИНОМ API в polynom-api.log — см. ApiFileLogger, тот же приём,
+        // что у Loodsman-клиента (Client.kt). Все эндпоинты login/* исключены из фильтра целиком —
+        // sign-in шлёт пароль, update-token шлёт refresh_token, оба в открытом виде в теле.
+        install(Logging) {
+            logger = fileLogger("polynom-api.log")
+            level = LogLevel.ALL
+            sanitizeHeader { header -> header.equals("Authorization", ignoreCase = true) }
+            filter { request -> !request.url.encodedPath.contains("login/") }
         }
     }
 
