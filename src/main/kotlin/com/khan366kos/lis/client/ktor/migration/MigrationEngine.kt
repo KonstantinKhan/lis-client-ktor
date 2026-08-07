@@ -197,6 +197,8 @@ suspend fun MigrationContext.runLinksMigration() {
     val unitsCollision = AtomicInteger(0)
     val unitsAssigned = AtomicInteger(0)
     val analogGroupsFailed = AtomicInteger(0)
+    val parentsNotFound = AtomicInteger(0)
+    val childrenNotFound = AtomicInteger(0)
     val analogGroups = settings.mapping.analogGroups
 
     // identifiers уже полностью собраны (runObjectsMigration отработал раньше по pipeline) —
@@ -287,7 +289,15 @@ suspend fun MigrationContext.runLinksMigration() {
     }
 
     val linkPairs = classifierLinks.flatMap { (parentClassifierId, children) ->
-        val parents = elementsByClassifierId[parentClassifierId] ?: return@flatMap emptyList()
+        val parents = elementsByClassifierId[parentClassifierId]
+        if (parents == null) {
+            parentsNotFound.incrementAndGet()
+            System.err.println(
+                "Связь: родитель с кодом классификатора '$parentClassifierId' не найден среди " +
+                    "созданных объектов — все связи этого родителя пропущены"
+            )
+            return@flatMap emptyList()
+        }
         children.flatMap { (childClassifierId, rowData) ->
             if (rowData.quantity == null) {
                 linksFailed.incrementAndGet()
@@ -344,6 +354,12 @@ suspend fun MigrationContext.runLinksMigration() {
                             BomMaterialCandidate(parent.loodsmanId, childClassifierId.toString(), rowData.quantity, rowData.unitDesignation)
                         )
                     }
+                } else {
+                    childrenNotFound.incrementAndGet()
+                    System.err.println(
+                        "Связь ($parentClassifierId -> $childClassifierId) пропущена: код классификатора " +
+                            "входящего объекта не найден среди созданных объектов"
+                    )
                 }
                 return@flatMap emptyList()
             }
@@ -420,7 +436,8 @@ suspend fun MigrationContext.runLinksMigration() {
             "обозначение не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}, " +
             "кандидатов на Материал по КД ${bomMaterialCandidates.size}, " +
             "кандидатов на группы аналогов ${analogGroupCandidates.size}, " +
-            "ошибок групп аналогов ${analogGroupsFailed.get()}"
+            "ошибок групп аналогов ${analogGroupsFailed.get()}, " +
+            "родителей не найдено ${parentsNotFound.get()}, потомков не найдено ${childrenNotFound.get()}"
     )
 
     runAnalogGroupsMigration()
