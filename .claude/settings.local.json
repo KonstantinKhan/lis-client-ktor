@@ -6,7 +6,16 @@
       "Bash(awk '/<h3 id=\"IConceptPropertySource\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)",
       "Bash(awk '/<h3/{c++} c<=1')",
       "Bash(awk '/<h3 id=\"IPropertySource\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)",
-      "Bash(awk '/<h3 id=\"IEnumPropertyDefinition\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)"
+      "Bash(awk '/<h3 id=\"IEnumPropertyDefinition\"/,0' /mnt/c/MyProjects/api-polynom-24/Docs/webapi/swagger.html)",
+      "Bash(java -XshowSettings:properties -version)",
+      "Bash(javap -public -classpath /Users/khan/.gradle/caches/modules-2/files-2.1/org.apache.poi/poi/5.5.1/613d253b6f5f0849dd68fed043a7fb4b005e63a0/poi-5.5.1.jar org.apache.poi.ss.usermodel.DataFormatter)",
+      "Bash(unzip -o -q /Users/khan/.gradle/caches/modules-2/files-2.1/org.apache.poi/poi/5.5.1/3801900180c5d56c05837e29dd6850df7e39e6ae/poi-5.5.1-sources.jar org/apache/poi/ss/format/*.java)",
+      "Bash(unzip -l /Users/khan/.gradle/caches/modules-2/files-2.1/org.apache.poi/poi/5.5.1/3801900180c5d56c05837e29dd6850df7e39e6ae/poi-5.5.1-sources.jar)",
+      "Bash(unzip -o -q /Users/khan/.gradle/caches/modules-2/files-2.1/org.apache.poi/poi/5.5.1/3801900180c5d56c05837e29dd6850df7e39e6ae/poi-5.5.1-sources.jar org/apache/poi/ss/usermodel/ExcelGeneralNumberFormat.java)",
+      "Bash(xargs -I{} sh -c 'echo ==={}; cat {}')",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
