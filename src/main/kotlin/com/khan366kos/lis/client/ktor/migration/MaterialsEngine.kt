@@ -7,7 +7,8 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeGroup2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeVariant2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateAttributeValuesForBoInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateBoAttributeValueDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -210,19 +211,30 @@ private suspend fun MigrationContext.processMaterialCandidates(
 // Атрибуты объекта "Материал по КД" (mapping.materials.attributes, например "Марка материала"/
 // "НТД на материал") — вызывается РОВНО один раз, сразу после createBoObject, только когда объект
 // реально создан (внутри elementCacheMutex.withLock у вызывающего кода), а не на каждое попадание
-// в elementCache. Проверяет isSuccess каждого результата (в отличие от createLoodsmanObject() в
-// MigrationEngine.kt, которая результат setValues игнорирует) — по аналогии с BlanksEngine.kt.
-private suspend fun MigrationContext.assignMaterialAttributes(materialLoodsmanId: Int, attributeValues: Map<String, String>) {
+// в elementCache.
+//
+// Реальный инцидент: обычный EditObject/up-attr-values-by-ids (setValues, как в
+// createLoodsmanObject() в MigrationEngine.kt) отвечает 9009 "Метод AddAttrValues неприменим для
+// обновления интегрированных с ПОЛИНОМ:MDM атрибутов" на объектах, созданных через createBoObject —
+// нужен отдельный эндпоинт EditObject/update-attribute-values-for-bo (updateAttributeValuesForBo),
+// которому требуется тот же location, что передавался в CreateBoObjectInputDto при создании.
+private suspend fun MigrationContext.assignMaterialAttributes(
+    materialLoodsmanId: Int,
+    location: String,
+    attributeValues: Map<String, String>,
+) {
     if (attributeValues.isEmpty()) return
-    val results = loodsmanClient.editObject.setValues(
+    val results = loodsmanClient.editObject.updateAttributeValuesForBo(
         sessionId,
-        attributeValues.map { (name, value) ->
-            UpAttrValuesByIdsInputDto(versionId = materialLoodsmanId, attributeName = name, attributeValue = value)
-        }
+        UpdateAttributeValuesForBoInputDto(
+            attributeValues.map { (name, value) ->
+                UpdateBoAttributeValueDto(versionId = materialLoodsmanId, name = name, value = value, location = location)
+            }
+        )
     )
-    results.filterNot { it.isSuccess }.forEach {
+    results.filter { (it.errorCode ?: 0) != 0 }.forEach {
         System.err.println(
-            "Материал по КД: не удалось проставить атрибут '${it.attributeName}' на объект $materialLoodsmanId: ${it.errorMessage}"
+            "Материал по КД: не удалось проставить атрибут '${it.name}' на объект $materialLoodsmanId: ${it.error}"
         )
     }
 }
@@ -401,7 +413,7 @@ private suspend fun MigrationContext.resolveOrCreateMaterial(
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()
-        assignMaterialAttributes(created, candidate.attributeValues)
+        assignMaterialAttributes(created, location, candidate.attributeValues)
         created
     }
 }
@@ -695,7 +707,7 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()
-        assignMaterialAttributes(created, attributeValues)
+        assignMaterialAttributes(created, location, attributeValues)
         created
     }
 }

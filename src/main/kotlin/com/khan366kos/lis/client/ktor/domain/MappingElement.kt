@@ -17,4 +17,9 @@ data class MappingElement(
     val childLinkType: String? = null,
     val childOfSameTypeLinkType: String? = null,
     val resolveViaPolynom: Boolean = false,
+    // Атрибуты объекта, специфичные ТОЛЬКО для этого правила (например "Масса" только для типа
+    // "Деталь", а не для всех типов из mapping.types[]) — в дополнение к глобальному
+    // mapping.attributes (см. createLoodsmanObject в MigrationEngine.kt). Игнорируется, если
+    // resolveViaPolynom=true (объект создаётся через create-bo-object, минуя createLoodsmanObject).
+    val attributes: List<Attribute> = emptyList(),
 )

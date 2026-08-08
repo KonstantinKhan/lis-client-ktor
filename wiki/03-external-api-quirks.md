@@ -55,6 +55,35 @@
      не на объекте. Фикс — тот же путь (3), `up-link-attr-values` по `linkId` связи
      комплект→материал. Ошибка `410202` в общем случае означает именно это — атрибут в вызове
      привязан не к тому носителю (объект vs связь) в схеме Loodsman.
+- **Атрибуты объекта, интегрированного с ПОЛИНОМ:MDM (BO-объект, создан через `create-bo-object`),
+  нельзя ставить через `EditObject/up-attr-values-by-ids`** — Loodsman отвечает `9009 "Метод
+  AddAttrValues неприменим для обновления интегрированных с ПОЛИНОМ:MDM атрибутов. Используйте
+  методы UpAttrValueForBo или UpAttrValueForBoById"`. Реальный инцидент: атрибуты "Материал по
+  КД" (`materials.attributes`, "Марка материала"/"НТД на материал") сначала были реализованы через
+  `setValues`/`up-attr-values-by-ids` (как обычные атрибуты объекта, `createLoodsmanObject` в
+  `MigrationEngine.kt`) — падали с 9009. Правильный путь для BO-объектов —
+  `EditObject/update-attribute-values-for-bo` (`EditObject.updateAttributeValuesForBo`,
+  `UpdateAttributeValuesForBoInputDto{attributeValues: [UpdateBoAttributeValueDto{versionId, name,
+  value, unitId, bindingRuleId, location}]}`) — требует тот же `location` (строка ПОЛИНОМ), что
+  передавался в `CreateBoObjectInputDto` при создании объекта; `bindingRuleId` зафиксирован в `0`
+  (тот же приём, что `ReferenceBoVersionInputDto.boTypeBindingRuleId`). Ответ —
+  `UpdateAttributeValuesForBoOutputDto{index, versionId, name, errorCode, error}`: успех —
+  `errorCode` `0`/`null`, НЕ булев `isSuccess`, как у `UpAttrValuesByIdsOutputDto`/
+  `UpLinkAttrValuesOutputDto`. Реализация — `MaterialsEngine.assignMaterialAttributes()`.
+- **Числовые атрибуты Excel-ячеек могут прийти с запятой вместо точки** — `ExcelSaxParser.kt`
+  строит `DataFormatter()` без явной локали, значит числовое значение форматируется через
+  `Locale.getDefault()` JVM-процесса; на машине с русской локалью (типичный случай — миграция
+  запускается на Windows с ru-RU) ячейка `0.3` приходит в код как строка `"0,3"`. Loodsman
+  отвечает `410128 "Неверное значение для атрибута"` на числовой атрибут со значением через
+  запятую (или, для некоторых типов атрибутов, значение просто остаётся непроставленным без явной
+  ошибки). Тот же класс проблемы уже был известен для `blanks.rateColumn`/`linksSheet.quantityColumn`
+  (оба явно делают `.replace(",", ".")` перед `toDoubleOrNull()`) — для универсального механизма
+  атрибутов (`mapping.attributes[]`/`materials.attributes`/`blanks.attributes`/
+  `blanks.materialAttributes`) добавлен флаг `Attribute.numeric` (см.
+  [[05-settings-reference.md]]): при `numeric: true` `AttributeResolver.normalizeIfNumeric()`
+  заменяет запятую на точку перед отправкой в Loodsman; значение, не читающееся как число даже
+  после замены — пропускается (лог, атрибут не проставляется), а не блокирует остальные атрибуты
+  строки.
 - **`EditObject/up-link` — метод POST, а не PUT.** Первоначальный дизайн-документ
   (`docs/link-measure-unit-migration.md`, написан до сверки со `swagger.lapis`) утверждал PUT;
   реальный `swagger.lapis` (`create_up_link POST /api/v4/EditObject/up-link`) говорит POST.

@@ -123,7 +123,10 @@
               "column": "Тип объекта"
             }
           ]
-        }
+        },
+        "attributes": [
+          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
+        ]
       },
       {
         "target": "Деталь",
@@ -150,7 +153,10 @@
               "column": "Тип объекта"
             }
           ]
-        }
+        },
+        "attributes": [
+          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
+        ]
       },
       {
         "target": "Технологическая деталь",
@@ -424,28 +430,27 @@
       "rateAttribute": "Норма расхода",
       "appliesToTargets": ["Деталь", "Технологическая деталь"],
       "attributes": [
-        { "attrColumn": "Диаметр", "loodsmanAttr": "Диаметр", "unit": "мм" },
-        { "attrColumn": "Длина", "loodsmanAttr": "Длина", "unit": "мм" },
-        { "attrColumn": "Толщина", "loodsmanAttr": "Толщина", "unit": "мм" },
-        { "attrColumn": "Ширина", "loodsmanAttr": "Ширина", "unit": "мм" },
-        { "attrColumn": "Наружные диаметр", "loodsmanAttr": "Диаметр", "unit": "мм" },
-        { "attrColumn": "1-я стенка", "loodsmanAttr": "Высота", "unit": "мм" },
-        { "attrColumn": "2-я стенка", "loodsmanAttr": "Ширина", "unit": "мм" },
-        { "attrColumn": "Высота", "loodsmanAttr": "Высота", "unit": "мм" },
-        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Длина", "unit": "мм" },
-        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Ширина", "unit": "мм" },
-        { "attrColumn": "Стенка", "loodsmanAttr": "Толщина", "unit": "мм" },
-        { "attrColumn": "Сечение", "loodsmanAttr": "Диаметр", "unit": "мм" },
-        { "attrColumn": "КИМ", "loodsmanAttr": "Коэффициент использования материала" },
-        { "attrColumn": "Кол.дет из 1 заготовки", "loodsmanAttr": "Количество деталей из заготовки" },
-        { "attrColumn": "Масса", "loodsmanAttr": "Масса заготовки" },
-        { "attrColumn": "Масса детали", "loodsmanAttr": "Масса" },
+        { "attrColumn": "Диаметр", "loodsmanAttr": "Диаметр", "unit": "мм", "numeric": true },
+        { "attrColumn": "Длина", "loodsmanAttr": "Длина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Толщина", "loodsmanAttr": "Толщина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Ширина", "loodsmanAttr": "Ширина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Наружные диаметр", "loodsmanAttr": "Диаметр", "unit": "мм", "numeric": true },
+        { "attrColumn": "1-я стенка", "loodsmanAttr": "Высота", "unit": "мм", "numeric": true },
+        { "attrColumn": "2-я стенка", "loodsmanAttr": "Ширина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Высота", "loodsmanAttr": "Высота", "unit": "мм", "numeric": true },
+        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Длина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Ширина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Стенка", "loodsmanAttr": "Толщина", "unit": "мм", "numeric": true },
+        { "attrColumn": "Сечение", "loodsmanAttr": "Диаметр", "unit": "мм", "numeric": true },
+        { "attrColumn": "КИМ", "loodsmanAttr": "Коэффициент использования материала", "numeric": true },
+        { "attrColumn": "Кол.дет из 1 заготовки", "loodsmanAttr": "Количество деталей из заготовки", "numeric": true },
+        { "attrColumn": "Масса", "loodsmanAttr": "Масса заготовки", "numeric": true },
         { "attrColumn": "сплав/группа контроля", "loodsmanAttr": "Сплав/группа контроля" },
         { "attrColumn": "тип продукции", "loodsmanAttr": "Тип продукции" },
-        { "attrColumn": "вид технологии литья", "loodsmanAttr": "Вид тенологии литья" },
-        { "attrColumn": "вес отливки в килограммах", "loodsmanAttr": "Вес отливки килограммах" },
-        { "attrColumn": "процент используемых отходов", "loodsmanAttr": "Процент используемых отходов" },
-        { "attrColumn": "процент безвозратных потерь от веса металлозавалки", "loodsmanAttr": "Процент безвозвратных потерь от веса металлозавалки" }
+        { "attrColumn": "вид технологии литья", "loodsmanAttr": "Вид технологии литья" },
+        { "attrColumn": "вес отливки в килограммах", "loodsmanAttr": "Вес отливки в килограммах", "numeric": true },
+        { "attrColumn": "процент используемых отходов", "loodsmanAttr": "Процент используемых отходов", "numeric": true },
+        { "attrColumn": "процент безвозратных потерь от веса металлозавалки", "loodsmanAttr": "Процент безвозвратных потерь от веса металлозавалки", "numeric": true }
       ],
       "materialAttributes": [
         { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" },

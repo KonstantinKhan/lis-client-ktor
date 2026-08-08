@@ -811,14 +811,22 @@ private suspend fun MigrationContext.createLoodsmanObject(
     val loodsmanId = created.asInt()
     objectsCreated.incrementAndGet()
 
-    val attributeValues = resolveAttributes(settings.mapping.attributes, row)
+    // Глобальные атрибуты (mapping.attributes, применяются ко ВСЕМ типам) + атрибуты, специфичные
+    // для этого конкретного правила (mappingElement.attributes, например "Масса" только для
+    // "Деталь") — при совпадении имени побеждает значение из mappingElement.attributes (правее в +).
+    val attributeValues = resolveAttributes(settings.mapping.attributes, row) + resolveAttributes(mappingElement.attributes, row)
     if (attributeValues.isNotEmpty()) {
-        loodsmanClient.editObject.setValues(
+        val results = loodsmanClient.editObject.setValues(
             sessionId,
             attributeValues.map { (name, value) ->
                 UpAttrValuesByIdsInputDto(versionId = loodsmanId, attributeName = name, attributeValue = value)
             }
         )
+        results.filterNot { it.isSuccess }.forEach {
+            System.err.println(
+                "Объекты: не удалось проставить атрибут '${it.attributeName}' на объект $loodsmanId: ${it.errorMessage}"
+            )
+        }
     }
 
     if (mappingElement.linkToRoot) {

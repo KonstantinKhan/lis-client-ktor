@@ -9,6 +9,8 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsOutputDt
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesOutputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateAttributeValuesForBoInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateAttributeValuesForBoOutputDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.setBody
@@ -41,6 +43,17 @@ class EditObject(
     suspend fun setValues(sessionId: String, data: List<UpAttrValuesByIdsInputDto>): List<UpAttrValuesByIdsOutputDto> =
         requestGate.withPermit {
             client.postWithSession("EditObject/up-attr-values-by-ids", sessionId) {
+                setBody(data)
+            }.body()
+        }
+
+    // Атрибуты ОБЪЕКТА, интегрированного с ПОЛИНОМ:MDM (создан через createBoObject) — Loodsman
+    // отвечает 9009 "Метод AddAttrValues неприменим..." на setValues() выше для таких объектов,
+    // нужен именно этот эндпоинт (реальный инцидент, см. MaterialsEngine.kt). location — тот же
+    // ПОЛИНОМ location, что передавался в CreateBoObjectInputDto при создании объекта.
+    suspend fun updateAttributeValuesForBo(sessionId: String, data: UpdateAttributeValuesForBoInputDto): List<UpdateAttributeValuesForBoOutputDto> =
+        requestGate.withPermit {
+            client.postWithSession("EditObject/update-attribute-values-for-bo", sessionId) {
                 setBody(data)
             }.body()
         }
