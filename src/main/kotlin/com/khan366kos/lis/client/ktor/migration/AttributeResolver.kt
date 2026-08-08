@@ -38,10 +38,16 @@ fun resolveAttributes(attributes: List<Attribute>, row: RowView): Map<String, St
         attr.loodsmanAttr to normalized
     }.toMap()
 
-// Вариант resolveAttributes(), возвращающий List, а не Map — намеренно НЕ схлопывает несколько
-// attrColumn на один loodsmanAttr (например "Диаметр"/"Наружные диаметр"/"Сечение" -> "Диаметр" у
-// "Заготовки", см. BlanksSettings.attributes): на реальных данных заполнен только один столбец из
-// такой группы на строку, а не Map с непредсказуемым порядком схлопывания.
+// Вариант resolveAttributes(), возвращающий List, а не Map — нужен, чтобы нести unitDesignation
+// вместе со значением (Map<String,String> этого не позволяет). Несколько attrColumn могут
+// указывать на один loodsmanAttr (например "Диаметр"/"Наружные диаметр"/"Сечение" -> "Диаметр" у
+// "Заготовки", см. BlanksSettings.attributes) — РЕАЛЬНЫЙ ИНЦИДЕНТ: на части строк одновременно
+// заполнены несколько столбцов такой группы (например и "1-я стенка", и "Высота" сразу) — если
+// отправить оба как отдельные записи в одном батче EditObject/up-attr-values-by-ids, Loodsman
+// отвечает 400 "Входной набор данных не уникален" (дублирующийся versionId+attributeName) и
+// заготовка/материал вообще не создаются (см. BlanksEngine.kt). Поэтому дедуплицируем по
+// loodsmanAttr — побеждает ПОСЛЕДНЯЯ по порядку в списке настроек запись с непустым значением,
+// тот же приём, что и Map-схлопывание в resolveAttributes() выше.
 fun resolveAttributesWithUnits(attributes: List<Attribute>, row: RowView): List<ResolvedAttribute> =
     attributes.mapNotNull { attr ->
         val raw = row.value(attr.attrColumn)
@@ -49,4 +55,4 @@ fun resolveAttributesWithUnits(attributes: List<Attribute>, row: RowView): List<
         if (resolved.isNullOrEmpty() || resolved == "N/A") return@mapNotNull null
         val normalized = normalizeIfNumeric(attr, resolved) ?: return@mapNotNull null
         ResolvedAttribute(attr.loodsmanAttr, normalized, attr.unit)
-    }
+    }.associateBy { it.loodsmanAttr }.values.toList()
