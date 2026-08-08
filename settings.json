@@ -196,7 +196,10 @@
               "column": "Тип объекта"
             }
           ]
-        }
+        },
+        "attributes": [
+          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
+        ]
       },
       {
         "target": "Технологическая деталь",
@@ -226,7 +229,10 @@
               "is": "дет"
             }
           ]
-        }
+        },
+        "attributes": [
+          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
+        ]
       },
       {
         "target": "Технологическая деталь",
@@ -256,7 +262,10 @@
               "is": "литье"
             }
           ]
-        }
+        },
+        "attributes": [
+          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
+        ]
       },
       {
         "target": "Технологическая деталь",
@@ -286,7 +295,10 @@
               "is": "литье"
             }
           ]
-        }
+        },
+        "attributes": [
+          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
+        ]
       },
       {
         "target": "Стандартное изделие",
@@ -453,9 +465,7 @@
         { "attrColumn": "процент безвозратных потерь от веса металлозавалки", "loodsmanAttr": "Процент безвозвратных потерь от веса металлозавалки", "numeric": true }
       ],
       "materialAttributes": [
-        { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" }
-      ],
-      "materialObjectAttributes": [
+        { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" },
         { "attrColumn": "Профиль заготовки", "loodsmanAttr": "Форма сортамента" }
       ]
     },

@@ -813,10 +813,18 @@ private suspend fun MigrationContext.createLoodsmanObject(
     val loodsmanId = created.asInt()
     objectsCreated.incrementAndGet()
 
-    // Глобальные атрибуты (mapping.attributes, применяются ко ВСЕМ типам) + атрибуты, специфичные
-    // для этого конкретного правила (mappingElement.attributes, например "Масса" только для
-    // "Деталь") — при совпадении имени побеждает значение из mappingElement.attributes (правее в +).
-    val attributeValues = resolveAttributes(settings.mapping.attributes, row) + resolveAttributes(mappingElement.attributes, row)
+    // Глобальные атрибуты (mapping.attributes, применяются ко ВСЕМ НЕ-папочным типам) + атрибуты,
+    // специфичные для этого конкретного правила (mappingElement.attributes, например "Масса"
+    // только для "Деталь") — при совпадении имени побеждает значение из mappingElement.attributes
+    // (правее в +). Папка — организационный контейнер (см. isFolder везде в движке — не участвует
+    // в BOM/классификации/материалах), в её типе Loodsman нет атрибутов вроде "Наименование" —
+    // попытка проставить их падает с "неприменимо" на каждой папке (реальный инцидент, чисто
+    // шумный лог, не ошибка по сути), поэтому для папок атрибуты не резолвятся вовсе.
+    val attributeValues = if (mappingElement.isFolder) {
+        emptyMap()
+    } else {
+        resolveAttributes(settings.mapping.attributes, row) + resolveAttributes(mappingElement.attributes, row)
+    }
     if (attributeValues.isNotEmpty()) {
         val results = loodsmanClient.editObject.setValues(
             sessionId,
