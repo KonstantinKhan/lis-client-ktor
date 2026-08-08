@@ -18,10 +18,6 @@ fun resolveAttributes(attributes: List<Attribute>, row: RowView): Map<String, St
         if (!resolved.isNullOrEmpty() && resolved != "N/A") attr.loodsmanAttr to resolved else null
     }.toMap()
 
-// Атрибут объекта/связи вместе с его резолвленным значением и (опционально) обозначением единицы
-// измерения (Attribute.unit — константа из настроек, не читается из Excel).
-data class ResolvedAttribute(val loodsmanAttr: String, val value: String, val unitDesignation: String?)
-
 // Вариант resolveAttributes(), возвращающий List, а не Map — намеренно НЕ схлопывает несколько
 // attrColumn на один loodsmanAttr (например "Диаметр"/"Наружные диаметр"/"Сечение" -> "Диаметр" у
 // "Заготовки", см. BlanksSettings.attributes): на реальных данных заполнен только один столбец из
