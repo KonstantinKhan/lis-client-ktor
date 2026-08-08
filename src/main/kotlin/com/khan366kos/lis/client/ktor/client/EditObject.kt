@@ -4,13 +4,12 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.IdentifierDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValueForBoByIdInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsOutputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesOutputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateAttributeValuesForBoInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateAttributeValuesForBoOutputDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.setBody
@@ -47,15 +46,17 @@ class EditObject(
             }.body()
         }
 
-    // Атрибуты ОБЪЕКТА, интегрированного с ПОЛИНОМ:MDM (создан через createBoObject) — Loodsman
+    // Атрибут ОБЪЕКТА, интегрированного с ПОЛИНОМ:MDM (создан через createBoObject) — Loodsman
     // отвечает 9009 "Метод AddAttrValues неприменим..." на setValues() выше для таких объектов,
-    // нужен именно этот эндпоинт (реальный инцидент, см. MaterialsEngine.kt). location — тот же
-    // ПОЛИНОМ location, что передавался в CreateBoObjectInputDto при создании объекта.
-    suspend fun updateAttributeValuesForBo(sessionId: String, data: UpdateAttributeValuesForBoInputDto): List<UpdateAttributeValuesForBoOutputDto> =
+    // ошибка прямо называет UpAttrValueForBo/UpAttrValueForBoById (реальный инцидент, см.
+    // MaterialsEngine.kt). Поштучный вызов (в отличие от setValues, без батча) — без документированного
+    // тела ответа в swagger.lapis (тот же приём, что upLink выше). location — тот же ПОЛИНОМ
+    // location, что передавался в CreateBoObjectInputDto при создании объекта.
+    suspend fun upAttrValueForBoById(sessionId: String, data: UpAttrValueForBoByIdInputDto): HttpResponse =
         requestGate.withPermit {
-            client.postWithSession("EditObject/update-attribute-values-for-bo", sessionId) {
+            client.postWithSession("EditObject/up-attr-value-for-bo-by-id", sessionId) {
                 setBody(data)
-            }.body()
+            }
         }
 
     // Атрибут СВЯЗИ (не объекта) — отдельный эндпоинт от up-attr-values-by-ids/setValues выше.

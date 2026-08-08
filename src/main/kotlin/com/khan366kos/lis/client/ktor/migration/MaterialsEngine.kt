@@ -7,8 +7,7 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeGroup2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeVariant2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateAttributeValuesForBoInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpdateBoAttributeValueDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValueForBoByIdInputDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -215,27 +214,39 @@ private suspend fun MigrationContext.processMaterialCandidates(
 //
 // Реальный инцидент: обычный EditObject/up-attr-values-by-ids (setValues, как в
 // createLoodsmanObject() в MigrationEngine.kt) отвечает 9009 "Метод AddAttrValues неприменим для
-// обновления интегрированных с ПОЛИНОМ:MDM атрибутов" на объектах, созданных через createBoObject —
-// нужен отдельный эндпоинт EditObject/update-attribute-values-for-bo (updateAttributeValuesForBo),
-// которому требуется тот же location, что передавался в CreateBoObjectInputDto при создании.
+// обновления интегрированных с ПОЛИНОМ:MDM атрибутов. Используйте методы UpAttrValueForBo или
+// UpAttrValueForBoById" на объектах, созданных через createBoObject. В swagger.lapis из этой пары
+// задокументирован только up-attr-value-for-bo-by-id (EditObject.upAttrValueForBoById) —
+// поштучный вызов, не батч (в отличие от setValues); location — тот же ПОЛИНОМ location, что
+// передавался в CreateBoObjectInputDto при создании. Первая попытка через батчевый
+// EditObject/update-attribute-values-for-bo молча ничего не проставляла (0 ошибок, но и без
+// эффекта) — судя по всему, это отдельный метод под другую область атрибутов ("независимые
+// атрибуты", set-independent-attributes рядом в swagger), не то же самое, что просил использовать
+// текст ошибки 9009.
 private suspend fun MigrationContext.assignMaterialAttributes(
     materialLoodsmanId: Int,
     location: String,
     attributeValues: Map<String, String>,
 ) {
-    if (attributeValues.isEmpty()) return
-    val results = loodsmanClient.editObject.updateAttributeValuesForBo(
-        sessionId,
-        UpdateAttributeValuesForBoInputDto(
-            attributeValues.map { (name, value) ->
-                UpdateBoAttributeValueDto(versionId = materialLoodsmanId, name = name, value = value, location = location)
+    attributeValues.forEach { (name, value) ->
+        try {
+            loodsmanClient.editObject.upAttrValueForBoById(
+                sessionId,
+                UpAttrValueForBoByIdInputDto(
+                    idVersion = materialLoodsmanId,
+                    attrName = name,
+                    attrValue = value,
+                    location = location,
+                )
+            )
+        } catch (e: Exception) {
+            System.err.println(
+                "Материал по КД: не удалось проставить атрибут '$name' на объект $materialLoodsmanId: ${e.message}"
+            )
+            (e as? ResponseException)?.let {
+                System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
             }
-        )
-    )
-    results.filter { (it.errorCode ?: 0) != 0 }.forEach {
-        System.err.println(
-            "Материал по КД: не удалось проставить атрибут '${it.name}' на объект $materialLoodsmanId: ${it.error}"
-        )
+        }
     }
 }
 
