@@ -454,16 +454,26 @@ data class Mapping(
 
 **Файл:** `domain/MappingElement.kt`
 
-**Описание:** Правило маппинга строки Excel в тип объекта Loodsman.
+**Описание:** Правило маппинга строки Excel в тип объекта Loodsman (`mapping.types[]`). Актуальный
+состав (предыдущая версия этого раздела была устаревшей заготовкой, поля не совпадали с реальными
+именами в JSON — см. [[05-settings-reference.md]] за полным описанием семантики каждого поля):
 
 ```kotlin
 data class MappingElement(
-    val type: String,                   // Тип объекта в Loodsman
-    val conditions: Conditions,         // Условия срабатывания
-    val attributes: List<Attribute>,    // Атрибуты для установки
-    val resolveViaPolynom: Boolean = false, // Резолвить через Полином
-    val folder: Boolean = false,        // Это папка
-    val createInFolder: Boolean = false // Создавать в папке
+    val target: String,
+    val source: String,
+    val state: String? = null,
+    val isProject: Boolean = false,
+    val isFolder: Boolean = false,
+    val linkToRoot: Boolean = false,
+    val conditions: Conditions,
+    val childLinkType: String? = null,
+    val childOfSameTypeLinkType: String? = null,
+    val resolveViaPolynom: Boolean = false,
+    // Атрибуты, специфичные ТОЛЬКО для этого правила — в дополнение к глобальному
+    // mapping.attributes[], см. Attribute ниже. Игнорируется при resolveViaPolynom=true и для
+    // isFolder=true (см. 04-business-logic.md).
+    val attributes: List<Attribute> = emptyList(),
 )
 ```
 
@@ -506,14 +516,18 @@ data class Rule(
 
 **Файл:** `domain/Attribute.kt`
 
-**Описание:** Атрибут объекта для установки.
+**Описание:** Атрибут объекта/связи для установки — используется в `mapping.attributes[]`,
+`mappingElement.attributes`, `materials.attributes`, `blanks.attributes`,
+`blanks.materialAttributes`, `blanks.materialObjectAttributes` (см. [[05-settings-reference.md]]).
+Актуальный состав (предыдущая версия этого раздела была устаревшей заготовкой):
 
 ```kotlin
 data class Attribute(
-    val id: Int?,                       // ID атрибута
-    val name: String?,                  // Имя атрибута
-    val column: String?,                // Колонка Excel для значения
-    val replaceRule: ReplaceRule? = null // Правило замены значения
+    val attrColumn: String,        // столбец Excel — источник значения
+    val loodsmanAttr: String,      // имя атрибута в Loodsman
+    val replace: ReplaceRule? = null,
+    val unit: String? = null,      // фиксированное обозначение единицы (например "мм")
+    val numeric: Boolean = false,  // запятая -> точка перед отправкой, см. AttributeResolver
 )
 ```
 
@@ -538,18 +552,20 @@ data class ReplaceRule(
 
 **Файл:** `domain/MaterialCandidate.kt`
 
-**Описание:** Кандидат на создание материала.
+**Описание:** Кандидат на создание "Материала по КД" (потоки A/B), собирается в `processObjectRow`
+на строке Детали. Актуальный состав (предыдущая версия этого раздела была устаревшей заготовкой):
 
 ```kotlin
 data class MaterialCandidate(
-    val designation: String,            // Обозначение материала
-    val name: String,                   // Имя материала
-    val classifierId: Int?,             // ID классификатора
-    val quantity: Double?,              // Количество
-    val unitDesignation: String?,       // Единица измерения
-    val isSubstitute: Boolean,          // Это заменитель
-    val detailIds: List<Int>            // ID деталей для связи
-)
+    val detailLoodsmanId: Int,
+    val drawingDesignation: String?,
+    val classifierCode: String?,
+    val detailClassifierCode: String? = null,
+    // mapping.materials.attributes, резолвлены с той же строки Детали — см. 05-settings-reference.md
+    val attributeValues: Map<String, String> = emptyMap(),
+) {
+    val dedupKey: String?  // classifierCode, фолбэк на drawingDesignation, оба пустые -> null
+}
 ```
 
 ---
@@ -558,14 +574,17 @@ data class MaterialCandidate(
 
 **Файл:** `domain/BomMaterialCandidate.kt`
 
-**Описание:** Кандидат на создание материала по КД.
+**Описание:** Кандидат на создание "Материала по КД" для потока C (DS-объекты). Актуальный состав:
 
 ```kotlin
 data class BomMaterialCandidate(
-    val classifierId: Int,              // ID классификатора
-    val parentIds: List<Int>,           // ID родительских объектов
-    val quantity: Double?,              // Количество
-    val unitDesignation: String?,       // Единица измерения
+    val parentLoodsmanId: Int,
+    val classifierCode: String,
+    val quantity: Double,
+    val unitDesignation: String?,
+    // mapping.materials.attributes, резолвлены со строки раздела "Материалы" листа "Объекты"
+    // (не со строки Детали, в отличие от MaterialCandidate выше) — см. MigrationContext.bomMaterialRowAttributes.
+    val attributeValues: Map<String, String> = emptyMap(),
 )
 ```
 
@@ -577,7 +596,7 @@ data class BomMaterialCandidate(
 
 **Описание:** Кандидат на создание "Заготовки" + "Материала основного" (`mapping.blanks`).
 Собирается только когда `materials.classifierCodeColumn` на строке непустой — в отличие от
-`MaterialCandidate`, `classifierCode` здесь не nullable.
+`MaterialCandidate`, `classifierCode` здесь не nullable. Актуальный состав:
 
 ```kotlin
 data class BlankCandidate(
@@ -586,6 +605,9 @@ data class BlankCandidate(
     val classifierCode: String,
     val rate: Double? = null,             // норма расхода, null = не проставлять
     val rateUnitDesignation: String? = null,
+    val objectAttributes: List<ResolvedAttribute> = emptyList(),      // blanks.attributes
+    val materialLinkAttributes: Map<String, String> = emptyMap(),     // blanks.materialAttributes
+    val materialObjectAttributes: Map<String, String> = emptyMap(),   // blanks.materialObjectAttributes
 )
 ```
 
@@ -836,16 +858,22 @@ class ConditionsEvaluator(private val context: Any) {
 
 **Файл:** `migration/AttributeResolver.kt`
 
-**Сигнатура:**
-```kotlin
-suspend fun AttributeResolver.resolveAttributes(
-    context: MigrationContext,
-    attributes: List<Attribute>,
-    rowView: RowView
-): List<UpAttrValuesByIdsInputDto>
-```
+**Описание:** НЕ suspend, чистые функции (предыдущая версия этого раздела была устаревшей
+заготовкой). Две функции, обе применяют `ReplaceRuleStrategies.resolve` + `normalizeIfNumeric`
+(запятая → точка для `Attribute.numeric`, см. [[03-external-api-quirks.md]]), различаются формой
+результата:
 
-**Описание:** Резолвит значения атрибутов для объекта.
+```kotlin
+// Схлопывает несколько attrColumn на один loodsmanAttr в Map (для materials.attributes/
+// blanks.materialAttributes и т.п., где unit не нужен) — обычные атрибуты объекта/связи.
+fun resolveAttributes(attributes: List<Attribute>, row: RowView): Map<String, String>
+
+// Возвращает List<ResolvedAttribute> с unitDesignation (для blanks.attributes, где нужна единица
+// измерения) — Map<String,String> для этого не годится. Сама дедуплицирует результат по
+// loodsmanAttr (последняя по порядку запись побеждает) — реальный инцидент, см.
+// 03-external-api-quirks.md/04-business-logic.md (поток D).
+fun resolveAttributesWithUnits(attributes: List<Attribute>, row: RowView): List<ResolvedAttribute>
+```
 
 **Использует:**
 - `ReplaceRuleStrategies` для применения правил замены
