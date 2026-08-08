@@ -466,7 +466,7 @@
       ],
       "materialAttributes": [
         { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" },
-        { "attrColumn": "Профиль заготовки", "loodsmanAttr": "Форма сортамента" }
+        { "attrColumn": "Профиль заготовки", "loodsmanAttr": "Профиль заготовки" }
       ]
     },
     "castingBlanks": {
