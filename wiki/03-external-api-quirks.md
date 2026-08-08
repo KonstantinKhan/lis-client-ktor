@@ -58,25 +58,32 @@
 - **Атрибуты объекта, интегрированного с ПОЛИНОМ:MDM (BO-объект, создан через `create-bo-object`),
   нельзя ставить через `EditObject/up-attr-values-by-ids`** — Loodsman отвечает `9009 "Метод
   AddAttrValues неприменим для обновления интегрированных с ПОЛИНОМ:MDM атрибутов. Используйте
-  методы UpAttrValueForBo или UpAttrValueForBoById"`. Реальный инцидент, ДВЕ попытки: атрибуты
-  "Материал по КД" (`materials.attributes`, "Марка материала"/"НТД на материал") сначала были
-  реализованы через `setValues`/`up-attr-values-by-ids` (как обычные атрибуты объекта,
-  `createLoodsmanObject` в `MigrationEngine.kt`) — падали с 9009. Первая попытка чинить —
-  батчевый `EditObject/update-attribute-values-for-bo` — вызывалась без ошибок, но результата не
-  давала (значение оставалось пустым в Loodsman): этот эндпоинт, судя по всему, отдельный метод не
-  под ту же область атрибутов, что просила ошибка 9009 (рядом в `swagger.lapis` — семейство
-  `set-independent-attributes`/"независимые атрибуты", другая концепция схемы Loodsman). Из пары
-  методов, названных в самом тексте ошибки (`UpAttrValueForBo`/`UpAttrValueForBoById`), в
-  `swagger.lapis` задокументирован только `EditObject/up-attr-value-for-bo-by-id`
-  (`UpAttrValueForBoByIdInputDto{idVersion, attrName, attrValue, idUnit, delete, bindingRuleId,
-  location}`) — ПОШТУЧНЫЙ вызов (не батч, в отличие от `up-attr-values-by-ids`/
-  `update-attribute-values-for-bo`), без документированного тела ответа (тот же приём, что
-  `EditObject/up-link` — `HttpResponse`, успех проверяется по HTTP-статусу через
-  `expectSuccess=true`, не по полю ответа). Требует тот же `location` (строка ПОЛИНОМ), что
-  передавался в `CreateBoObjectInputDto` при создании объекта; `bindingRuleId` зафиксирован в `0`
-  (тот же приём, что `ReferenceBoVersionInputDto.boTypeBindingRuleId`). Реализация —
-  `MaterialsEngine.assignMaterialAttributes()` (`EditObject.upAttrValueForBoById`, по одному
-  вызову на атрибут).
+  методы UpAttrValueForBo или UpAttrValueForBoById"`. Реальный инцидент, ТРИ попытки, прежде чем
+  нашёлся рабочий вариант:
+  1. `setValues`/`up-attr-values-by-ids` (батч, как обычные атрибуты объекта в
+     `createLoodsmanObject`, `MigrationEngine.kt`) — падает с 9009 на BO-объектах.
+  2. Батчевый `EditObject/update-attribute-values-for-bo` (`UpdateAttributeValuesForBoInputDto`,
+     ответ с полем `errorCode`) — вызывался без единой ошибки, но результата не давал (значение
+     оставалось пустым в Loodsman). Судя по всему, это отдельный метод не под ту область
+     атрибутов, что имела в виду ошибка 9009 (рядом в `swagger.lapis` — семейство
+     `set-independent-attributes`/"независимые атрибуты", другая концепция схемы Loodsman).
+  3. `EditObject/up-attr-value-for-bo-by-id` (`UpAttrValueForBoByIdInputDto{idVersion, attrName,
+     attrValue, idUnit, delete, bindingRuleId, location}`) — буквальное совпадение со вторым
+     методом, названным в тексте ошибки 9009 (`UpAttrValueForBoById`). Тоже принимался без ошибок
+     (200, пустое тело ответа — сам эндпоинт без документированного тела в `swagger.lapis`, тот же
+     приём, что `EditObject/up-link`), тоже БЕЗ эффекта — подтверждено проверкой ПОСЛЕ `exit`
+     (check-in), не вопрос видимости чекаута.
+
+  **Рабочий вариант**, найденный вручную через Swagger UI (`curl` напрямую на
+  `EditObject/up-attr-value-by-id`) — обычный ПОШТУЧНЫЙ (не батч) `EditObject/up-attr-value-by-id`
+  (`UpAttrValueByIdInputDto{idVersion, attrName, attrValue, idUnit, delete}`, БЕЗ `location`/
+  `bindingRuleId`) — та же операция, что `up-attr-values-by-ids` (батч), но, судя по всему, без
+  встроенной проверки на ПОЛИНОМ-интеграцию, которая блокирует именно батчевый метод. Рабочая
+  несостыковка/баг на стороне самого Loodsman (batch-метод проверяет и блокирует, поштучный —
+  нет), не в клиенте. Реализация — `MaterialsEngine.assignMaterialAttributes()`
+  (`EditObject.upAttrValueById`, по одному вызову на атрибут). Тот же способ работает и для
+  "Материала основного" (`blanks.materialObjectAttributes`, например "Форма сортамента") —
+  переиспользует ту же функцию.
 - **Числовые атрибуты Excel-ячеек могут прийти с запятой вместо точки** — `ExcelSaxParser.kt`
   строит `DataFormatter()` без явной локали, значит числовое значение форматируется через
   `Locale.getDefault()` JVM-процесса; на машине с русской локалью (типичный случай — миграция

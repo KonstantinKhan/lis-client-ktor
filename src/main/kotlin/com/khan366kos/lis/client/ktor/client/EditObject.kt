@@ -4,7 +4,7 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.IdentifierDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValueForBoByIdInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValueByIdInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsOutputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
@@ -47,14 +47,18 @@ class EditObject(
         }
 
     // Атрибут ОБЪЕКТА, интегрированного с ПОЛИНОМ:MDM (создан через createBoObject) — Loodsman
-    // отвечает 9009 "Метод AddAttrValues неприменим..." на setValues() выше для таких объектов,
-    // ошибка прямо называет UpAttrValueForBo/UpAttrValueForBoById (реальный инцидент, см.
-    // MaterialsEngine.kt). Поштучный вызов (в отличие от setValues, без батча) — без документированного
-    // тела ответа в swagger.lapis (тот же приём, что upLink выше). location — тот же ПОЛИНОМ
-    // location, что передавался в CreateBoObjectInputDto при создании объекта.
-    suspend fun upAttrValueForBoById(sessionId: String, data: UpAttrValueForBoByIdInputDto): HttpResponse =
+    // отвечает 9009 "Метод AddAttrValues неприменим..." на setValues() выше для таких объектов.
+    // Реальный инцидент (ДВЕ неудачные попытки до этой): батчевый up-attr-values-by-ids — 9009;
+    // "for-bo"-вариант EditObject/up-attr-value-for-bo-by-id — принимает запрос (200, пустое
+    // тело), но значение не проставляется вообще (похоже на баг/несостыковку самого Loodsman —
+    // ПОЛИНОМ-проверка есть у батчевого метода, а у "for-bo" эндпоинта, судя по всему, объект в
+    // итоге не резолвится корректно). Рабочий вариант, найденный вручную через Swagger UI —
+    // обычный ПОШТУЧНЫЙ (не batch) EditObject/up-attr-value-by-id: та же операция, что у setValues
+    // (батч), но без встроенной проверки на ПОЛИНОМ-интеграцию, поэтому работает и для BO-объектов.
+    // Без документированного тела ответа в swagger.lapis (тот же приём, что upLink выше).
+    suspend fun upAttrValueById(sessionId: String, data: UpAttrValueByIdInputDto): HttpResponse =
         requestGate.withPermit {
-            client.postWithSession("EditObject/up-attr-value-for-bo-by-id", sessionId) {
+            client.postWithSession("EditObject/up-attr-value-by-id", sessionId) {
                 setBody(data)
             }
         }

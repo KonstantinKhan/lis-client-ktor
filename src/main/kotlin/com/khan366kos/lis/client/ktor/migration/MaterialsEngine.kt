@@ -7,7 +7,7 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeGroup2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeVariant2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
-import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValueForBoByIdInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValueByIdInputDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -212,41 +212,23 @@ private suspend fun MigrationContext.processMaterialCandidates(
 // реально создан (внутри elementCacheMutex.withLock у вызывающего кода), а не на каждое попадание
 // в elementCache.
 //
-// Реальный инцидент: обычный EditObject/up-attr-values-by-ids (setValues, как в
+// Реальный инцидент, ТРИ попытки: обычный EditObject/up-attr-values-by-ids (setValues, как в
 // createLoodsmanObject() в MigrationEngine.kt) отвечает 9009 "Метод AddAttrValues неприменим для
 // обновления интегрированных с ПОЛИНОМ:MDM атрибутов. Используйте методы UpAttrValueForBo или
-// UpAttrValueForBoById" на объектах, созданных через createBoObject. В swagger.lapis из этой пары
-// задокументирован только up-attr-value-for-bo-by-id (EditObject.upAttrValueForBoById) —
-// поштучный вызов, не батч (в отличие от setValues); location — тот же ПОЛИНОМ location, что
-// передавался в CreateBoObjectInputDto при создании. Первая попытка через батчевый
-// EditObject/update-attribute-values-for-bo молча ничего не проставляла (0 ошибок, но и без
-// эффекта) — судя по всему, это отдельный метод под другую область атрибутов ("независимые
-// атрибуты", set-independent-attributes рядом в swagger), не то же самое, что просил использовать
-// текст ошибки 9009.
-private suspend fun MigrationContext.assignMaterialAttributes(
-    materialLoodsmanId: Int,
-    location: String,
-    attributeValues: Map<String, String>,
-) {
+// UpAttrValueForBoById" на объектах, созданных через createBoObject. Батчевый
+// EditObject/update-attribute-values-for-bo принимал запрос без ошибок, но без эффекта (похоже,
+// отдельный метод под "независимые атрибуты", не то же самое). EditObject/up-attr-value-for-bo-by-id
+// (буквальное совпадение с текстом ошибки) тоже принимал без ошибок (200, пустое тело) и тоже без
+// эффекта. Рабочий вариант, найденный вручную через Swagger UI — обычный ПОШТУЧНЫЙ (не батч)
+// EditObject/up-attr-value-by-id: та же операция, что setValues (батч), без location/bindingRuleId,
+// но, судя по всему, БЕЗ встроенной проверки на ПОЛИНОМ-интеграцию, которая блокирует батчевый
+// метод — рабочий баг/несостыковка на стороне самого Loodsman, не в клиенте.
+private suspend fun MigrationContext.assignMaterialAttributes(materialLoodsmanId: Int, attributeValues: Map<String, String>) {
     attributeValues.forEach { (name, value) ->
         try {
-            val response = loodsmanClient.editObject.upAttrValueForBoById(
+            loodsmanClient.editObject.upAttrValueById(
                 sessionId,
-                UpAttrValueForBoByIdInputDto(
-                    idVersion = materialLoodsmanId,
-                    attrName = name,
-                    attrValue = value,
-                    location = location,
-                )
-            )
-            // ВРЕМЕННАЯ диагностика: HttpResponse не парсится (нет документированного тела в
-            // swagger.lapis, тот же приём, что upLink) — expectSuccess=true отловит не-2xx как
-            // исключение ниже, но если Loodsman вернёт 200 с телом-признаком неуспеха (как у
-            // setValues/setLinkAttrValues), мы иначе никогда не увидим это тело. Убрать после
-            // диагностики реального инцидента "атрибут не проставляется без единой ошибки".
-            println(
-                "Материал по КД: атрибут '$name'='$value' на объект $materialLoodsmanId " +
-                    "(location='$location') -> HTTP ${response.status.value}, тело: ${response.bodyAsText()}"
+                UpAttrValueByIdInputDto(idVersion = materialLoodsmanId, attrName = name, attrValue = value)
             )
         } catch (e: Exception) {
             System.err.println(
@@ -433,7 +415,7 @@ private suspend fun MigrationContext.resolveOrCreateMaterial(
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()
-        assignMaterialAttributes(created, location, candidate.attributeValues)
+        assignMaterialAttributes(created, candidate.attributeValues)
         created
     }
 }
@@ -727,7 +709,7 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()
-        assignMaterialAttributes(created, location, attributeValues)
+        assignMaterialAttributes(created, attributeValues)
         created
     }
 }
