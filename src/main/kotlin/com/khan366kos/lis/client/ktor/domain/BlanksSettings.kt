@@ -40,6 +40,12 @@ data class BlanksSettings(
     // НЕ атрибуты объекта материала — тот же приём, что уже используется для rateAttribute выше,
     // но отдельный от неё вызов EditObject/up-link-attr-values в BlanksEngine.kt.
     val materialAttributes: List<Attribute> = emptyList(),
+    // Атрибуты ОБЪЕКТА "Материал основной" (например "Форма сортамента"←"Профиль заготовки") — НЕ
+    // атрибуты связи, в отличие от materialAttributes выше. "Материал основной" — BO-объект
+    // (создан через createBoObject, resolveBomMaterialByClassifierCode в MaterialsEngine.kt), тот
+    // же случай, что materials.attributes у "Материала по КД" — пишутся через
+    // EditObject/update-attribute-values-for-bo (assignMaterialAttributes), не up-attr-values-by-ids.
+    val materialObjectAttributes: List<Attribute> = emptyList(),
 ) {
     companion object {
         val None = BlanksSettings()

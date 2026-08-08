@@ -729,6 +729,7 @@ private suspend fun MigrationContext.processObjectRow(
 
             val objectAttributes = resolveAttributesWithUnits(blanks.attributes, row)
             val materialLinkAttributes = resolveAttributes(blanks.materialAttributes, row)
+            val materialObjectAttributes = resolveAttributes(blanks.materialObjectAttributes, row)
 
             BlankCandidate(
                 loodsmanId,
@@ -738,6 +739,7 @@ private suspend fun MigrationContext.processObjectRow(
                 rateUnitDesignation,
                 objectAttributes,
                 materialLinkAttributes,
+                materialObjectAttributes,
             )
         }
     }

@@ -453,7 +453,9 @@
         { "attrColumn": "процент безвозратных потерь от веса металлозавалки", "loodsmanAttr": "Процент безвозвратных потерь от веса металлозавалки", "numeric": true }
       ],
       "materialAttributes": [
-        { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" },
+        { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" }
+      ],
+      "materialObjectAttributes": [
         { "attrColumn": "Профиль заготовки", "loodsmanAttr": "Форма сортамента" }
       ]
     },

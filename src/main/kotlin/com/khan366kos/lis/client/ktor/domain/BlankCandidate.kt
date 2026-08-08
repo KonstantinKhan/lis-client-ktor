@@ -17,4 +17,8 @@ data class BlankCandidate(
     // Атрибуты СВЯЗИ "Изготавливается из ..." заготовка -> материал основной
     // (mapping.blanks.materialAttributes) — резолвлены с той же строки.
     val materialLinkAttributes: Map<String, String> = emptyMap(),
+    // Атрибуты ОБЪЕКТА "Материал основной" (mapping.blanks.materialObjectAttributes) — резолвлены
+    // с той же строки, применяются в MaterialsEngine.resolveBomMaterialByClassifierCode при
+    // реальном создании объекта (не на каждое попадание в кэш).
+    val materialObjectAttributes: Map<String, String> = emptyMap(),
 )

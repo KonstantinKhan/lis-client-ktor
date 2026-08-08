@@ -155,6 +155,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         elementCache,
                         elementCacheMutex,
                         materialsCreated,
+                        attributeValues = candidate.materialObjectAttributes,
                     )
                     if (materialId == null) {
                         materialsNotFound.incrementAndGet()
