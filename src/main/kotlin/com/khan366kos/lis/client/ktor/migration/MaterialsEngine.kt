@@ -230,7 +230,7 @@ private suspend fun MigrationContext.assignMaterialAttributes(
 ) {
     attributeValues.forEach { (name, value) ->
         try {
-            loodsmanClient.editObject.upAttrValueForBoById(
+            val response = loodsmanClient.editObject.upAttrValueForBoById(
                 sessionId,
                 UpAttrValueForBoByIdInputDto(
                     idVersion = materialLoodsmanId,
@@ -238,6 +238,15 @@ private suspend fun MigrationContext.assignMaterialAttributes(
                     attrValue = value,
                     location = location,
                 )
+            )
+            // ВРЕМЕННАЯ диагностика: HttpResponse не парсится (нет документированного тела в
+            // swagger.lapis, тот же приём, что upLink) — expectSuccess=true отловит не-2xx как
+            // исключение ниже, но если Loodsman вернёт 200 с телом-признаком неуспеха (как у
+            // setValues/setLinkAttrValues), мы иначе никогда не увидим это тело. Убрать после
+            // диагностики реального инцидента "атрибут не проставляется без единой ошибки".
+            println(
+                "Материал по КД: атрибут '$name'='$value' на объект $materialLoodsmanId " +
+                    "(location='$location') -> HTTP ${response.status.value}, тело: ${response.bodyAsText()}"
             )
         } catch (e: Exception) {
             System.err.println(
