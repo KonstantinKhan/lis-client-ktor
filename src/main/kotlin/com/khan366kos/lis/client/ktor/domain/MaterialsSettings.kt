@@ -52,6 +52,11 @@ data class MaterialsSettings(
     val changeGroupName: String = "Замена материала",
     val mainMaterialVariantName: String = "Основной материал",
     val substituteMaterialVariantName: String = "Материал-заменитель",
+    // Атрибуты объекта "Материал по КД" (например "Марка материала"/"НТД на материал") — читаются
+    // с листа "Объекты" и применяются ОДИН раз, в момент реального создания объекта (не на каждое
+    // попадание в elementCache), см. MaterialsEngine.resolveOrCreateMaterial/
+    // resolveBomMaterialByClassifierCode. Пусто — атрибуты не проставляются (текущее поведение).
+    val attributes: List<Attribute> = emptyList(),
 ) {
     companion object {
         val None = MaterialsSettings(

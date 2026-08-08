@@ -380,7 +380,11 @@
       },
       "changeGroupName": "Замена материала",
       "mainMaterialVariantName": "Основной материал",
-      "substituteMaterialVariantName": "Материал-заменитель"
+      "substituteMaterialVariantName": "Материал-заменитель",
+      "attributes": [
+        { "attrColumn": "Марка", "loodsmanAttr": "Марка материала" },
+        { "attrColumn": "ГОСТ", "loodsmanAttr": "НТД на материал" }
+      ]
     },
     "analogGroups": {
       "analogGroupColumn": "группа аналогов",
@@ -418,7 +422,35 @@
       "rateColumn": "Норма расхода",
       "rateUnitColumn": "Единица измерения",
       "rateAttribute": "Норма расхода",
-      "appliesToTargets": ["Деталь", "Технологическая деталь"]
+      "appliesToTargets": ["Деталь", "Технологическая деталь"],
+      "attributes": [
+        { "attrColumn": "Диаметр", "loodsmanAttr": "Диаметр", "unit": "мм" },
+        { "attrColumn": "Длина", "loodsmanAttr": "Длина", "unit": "мм" },
+        { "attrColumn": "Толщина", "loodsmanAttr": "Толщина", "unit": "мм" },
+        { "attrColumn": "Ширина", "loodsmanAttr": "Ширина", "unit": "мм" },
+        { "attrColumn": "Наружные диаметр", "loodsmanAttr": "Диаметр", "unit": "мм" },
+        { "attrColumn": "1-я стенка", "loodsmanAttr": "Высота", "unit": "мм" },
+        { "attrColumn": "2-я стенка", "loodsmanAttr": "Ширина", "unit": "мм" },
+        { "attrColumn": "Высота", "loodsmanAttr": "Высота", "unit": "мм" },
+        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Длина", "unit": "мм" },
+        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Ширина", "unit": "мм" },
+        { "attrColumn": "Стенка", "loodsmanAttr": "Толщина", "unit": "мм" },
+        { "attrColumn": "Сечение", "loodsmanAttr": "Диаметр", "unit": "мм" },
+        { "attrColumn": "КИМ", "loodsmanAttr": "Коэффициент использования материала" },
+        { "attrColumn": "Кол.дет из 1 заготовки", "loodsmanAttr": "Количество деталей из заготовки" },
+        { "attrColumn": "Масса", "loodsmanAttr": "Масса заготовки" },
+        { "attrColumn": "Масса детали", "loodsmanAttr": "Масса" },
+        { "attrColumn": "сплав/группа контроля", "loodsmanAttr": "Сплав/группа контроля" },
+        { "attrColumn": "тип продукции", "loodsmanAttr": "Тип продукции" },
+        { "attrColumn": "вид технологии литья", "loodsmanAttr": "Вид тенологии литья" },
+        { "attrColumn": "вес отливки в килограммах", "loodsmanAttr": "Вес отливки килограммах" },
+        { "attrColumn": "процент используемых отходов", "loodsmanAttr": "процент используемых отходов" },
+        { "attrColumn": "процент безвозвратных потерь от веса металлозавалки", "loodsmanAttr": "Процент безвозвратных потерь от веса металлозавалки" }
+      ],
+      "materialAttributes": [
+        { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" },
+        { "attrColumn": "Профиль заготовки", "loodsmanAttr": "Форма сортамента" }
+      ]
     },
     "castingBlanks": {
       "name": "Литейные заготовки связи",

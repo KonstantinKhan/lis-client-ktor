@@ -58,6 +58,9 @@ suspend fun MigrationContext.runObjectsMigration() {
     materialSubstituteCandidates.addAll(results.flatMap { it.materialSubstituteCandidates })
     bomMaterialSpecClassifierIds.addAll(results.mapNotNull { it.bomMaterialClassifierId })
     bomMaterialRowClassifierIds.addAll(results.mapNotNull { it.bomMaterialRowClassifierId })
+    bomMaterialRowAttributes.putAll(
+        results.mapNotNull { r -> r.bomMaterialRowClassifierId?.let { it to r.bomMaterialRowAttributeValues } }
+    )
     blankCandidates.addAll(results.flatMap { it.blankCandidates })
 
     // Стандартные/Прочие изделия (mapping.types[].resolveViaPolynom) создаются не сразу в
@@ -349,9 +352,16 @@ suspend fun MigrationContext.runLinksMigration() {
                         )
                     }
                 } else if (parentClassifierId in bomMaterialSpecClassifierIds && childClassifierId in bomMaterialRowClassifierIds) {
+                    val attributeValues = bomMaterialRowAttributes[childClassifierId] ?: emptyMap()
                     parents.forEach { parent ->
                         bomMaterialCandidates.add(
-                            BomMaterialCandidate(parent.loodsmanId, childClassifierId.toString(), rowData.quantity, rowData.unitDesignation)
+                            BomMaterialCandidate(
+                                parent.loodsmanId,
+                                childClassifierId.toString(),
+                                rowData.quantity,
+                                rowData.unitDesignation,
+                                attributeValues,
+                            )
                         )
                     }
                 } else {
@@ -557,6 +567,9 @@ private data class ObjectRowResult(
     val materialSubstituteCandidates: List<MaterialCandidate> = emptyList(),
     val bomMaterialClassifierId: Long? = null,
     val bomMaterialRowClassifierId: Long? = null,
+    // Атрибуты объекта "Материал по КД" (mapping.materials.attributes), считанные с ЭТОЙ строки —
+    // используется только когда bomMaterialRowClassifierId != null (см. runObjectsMigration()).
+    val bomMaterialRowAttributeValues: Map<String, String> = emptyMap(),
     val polynomBackedCandidates: List<PolynomBackedObjectCandidate> = emptyList(),
     val blankCandidates: List<BlankCandidate> = emptyList(),
     val classificationCandidates: List<ObjectClassificationCandidate> = emptyList(),
@@ -580,10 +593,22 @@ private suspend fun MigrationContext.processObjectRow(
         ConditionsEvaluator.isConfigured(bomMaterials.materialConditions) &&
         ConditionsEvaluator.matches(bomMaterials.materialConditions, row)
     ) classifierIdForRow else null
+    // Атрибуты объекта "Материал по КД" (поток C) — читаются с ЭТОЙ строки (раздел "Материалы"),
+    // только если строка реально распознана как "Материалы" выше (иначе не нужны вовсе).
+    val bomMaterialRowAttributeValues = if (bomMaterialRowClassifierId != null) {
+        resolveAttributes(settings.mapping.materials.attributes, row)
+    } else {
+        emptyMap()
+    }
 
     val matches = settings.mapping.types.filter { ConditionsEvaluator.matches(it.conditions, row) }
     if (matches.isEmpty()) {
-        return ObjectRowResult(emptyList(), emptyList(), bomMaterialRowClassifierId = bomMaterialRowClassifierId)
+        return ObjectRowResult(
+            emptyList(),
+            emptyList(),
+            bomMaterialRowClassifierId = bomMaterialRowClassifierId,
+            bomMaterialRowAttributeValues = bomMaterialRowAttributeValues,
+        )
     }
 
     // Правила с resolveViaPolynom (Стандартное/Прочее изделие) не создают объект здесь — объект
@@ -624,6 +649,9 @@ private suspend fun MigrationContext.processObjectRow(
     // столбцы (1)/(2) читаются независимо от identifierColumn листа "Связи".
     val materials = settings.mapping.materials
     val materialTargetObjects = createdObjects.filter { (mappingElement, _) -> mappingElement.target in materials.appliesToTargets }
+    // Атрибуты объекта "Материал по КД" (поток A/B) — читаются с ЭТОЙ строки Детали, один раз,
+    // переиспользуются и основным материалом, и заменителем (тот же приём, что classifierCode).
+    val materialAttributeValues = resolveAttributes(materials.attributes, row)
     val materialCandidatesForRow = materialTargetObjects
         .map { (_, loodsmanId) ->
             MaterialCandidate(
@@ -631,6 +659,7 @@ private suspend fun MigrationContext.processObjectRow(
                 drawingDesignation = row.value(materials.drawingDesignationColumn),
                 classifierCode = row.value(materials.classifierCodeColumn),
                 detailClassifierCode = row.value(settings.mapping.identifierColumn),
+                attributeValues = materialAttributeValues,
             )
         }
 
@@ -657,6 +686,7 @@ private suspend fun MigrationContext.processObjectRow(
                 drawingDesignation = substituteDesignation,
                 classifierCode = row.value(materials.classifierCodeColumn),
                 detailClassifierCode = row.value(settings.mapping.identifierColumn),
+                attributeValues = materialAttributeValues,
             )
         }
     }
@@ -697,7 +727,18 @@ private suspend fun MigrationContext.processObjectRow(
             }
             val rateUnitDesignation = resolveLinkUnitDesignation(blanks.rateUnitColumn, emptyList(), row)
 
-            BlankCandidate(loodsmanId, designation, classifierCode, rate, rateUnitDesignation)
+            val objectAttributes = resolveAttributesWithUnits(blanks.attributes, row)
+            val materialLinkAttributes = resolveAttributes(blanks.materialAttributes, row)
+
+            BlankCandidate(
+                loodsmanId,
+                designation,
+                classifierCode,
+                rate,
+                rateUnitDesignation,
+                objectAttributes,
+                materialLinkAttributes,
+            )
         }
     }
 
@@ -744,6 +785,7 @@ private suspend fun MigrationContext.processObjectRow(
         materialSubstituteCandidatesForRow,
         bomMaterialClassifierId,
         bomMaterialRowClassifierId,
+        bomMaterialRowAttributeValues,
         polynomBackedCandidatesForRow,
         blankCandidatesForRow,
         classificationCandidatesForRow,

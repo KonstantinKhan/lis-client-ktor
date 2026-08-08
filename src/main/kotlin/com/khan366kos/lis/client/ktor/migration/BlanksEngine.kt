@@ -3,6 +3,7 @@ package com.khan366kos.lis.client.ktor.migration
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -62,6 +63,10 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
     val rateAttrFailures = AtomicInteger(0)
     val unitsNotFound = AtomicInteger(0)
     val unitsCollision = AtomicInteger(0)
+    val blankAttrsAssigned = AtomicInteger(0)
+    val blankAttrFailures = AtomicInteger(0)
+    val materialAttrsAssigned = AtomicInteger(0)
+    val materialAttrFailures = AtomicInteger(0)
 
     // Норма расхода (mapping.blanks.rateUnitColumn) — резолв уникальных обозначений один раз,
     // тот же паттерн, что resolveUnitId везде в движке (одно обозначение обычно повторяется на
@@ -70,6 +75,18 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
     val rateUnitById = coroutineScope {
         distinctRateUnits.map { designation ->
             async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision, RATE_MEASURE_TIE_BREAK) }
+        }.awaitAll()
+    }.toMap()
+
+    // Единицы измерения атрибутов "Заготовка" (mapping.blanks.attributes[].unit, например "мм") —
+    // константы из настроек, а не значения строк Excel, поэтому резолвятся один раз на уникальное
+    // обозначение из конфига (а не по кандидатам, как rateUnitById выше). БЕЗ тай-брейка
+    // RATE_MEASURE_TIE_BREAK ("Масса") — он специфичен для нормы расхода, для линейных размеров
+    // ("мм") не подходит.
+    val distinctAttrUnits = blanks.attributes.mapNotNull { it.unit }.toSet()
+    val attrUnitById = coroutineScope {
+        distinctAttrUnits.map { designation ->
+            async { designation to resolveUnitId(designation, unitsNotFound, unitsCollision) }
         }.awaitAll()
     }.toMap()
 
@@ -87,6 +104,35 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         )
                     ).asInt()
                     blanksCreated.incrementAndGet()
+
+                    // Атрибуты ОБЪЕКТА "Заготовка" (mapping.blanks.attributes, например
+                    // "Диаметр"/"Длина" с фиксированной единицей "мм") — EditObject/up-attr-values-by-ids,
+                    // versionId только что созданной заготовки.
+                    if (candidate.objectAttributes.isNotEmpty()) {
+                        val results = loodsmanClient.editObject.setValues(
+                            sessionId,
+                            candidate.objectAttributes.map { attr ->
+                                UpAttrValuesByIdsInputDto(
+                                    versionId = blankId,
+                                    attributeName = attr.loodsmanAttr,
+                                    attributeValue = attr.value,
+                                    unitGuid = attr.unitDesignation?.let { attrUnitById[it] },
+                                )
+                            }
+                        )
+                        val failed = results.filterNot { it.isSuccess }
+                        if (failed.isEmpty()) {
+                            blankAttrsAssigned.incrementAndGet()
+                        } else {
+                            blankAttrFailures.incrementAndGet()
+                            failed.forEach {
+                                System.err.println(
+                                    "Заготовки: не удалось проставить атрибут '${it.attributeName}' на заготовку " +
+                                        "$blankId: ${it.errorMessage}"
+                                )
+                            }
+                        }
+                    }
 
                     // Реверсивная связь: субъект — заготовка, объект — деталь (правило связывания
                     // в Loodsman для типа blanks.linkType сконфигурировано в эту сторону, как у
@@ -159,6 +205,34 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                             }
                         }
                     }
+
+                    // Атрибуты СВЯЗИ "Материал основной" (mapping.blanks.materialAttributes,
+                    // например "Единица нормирования материала"/"Форма сортамента") — отдельный от
+                    // нормы расхода вызов up-link-attr-values на ТУ ЖЕ связь materialLinkId.
+                    if (candidate.materialLinkAttributes.isNotEmpty()) {
+                        val results = loodsmanClient.editObject.setLinkAttrValues(
+                            sessionId,
+                            candidate.materialLinkAttributes.map { (name, value) ->
+                                UpLinkAttrValuesInputDto(
+                                    linkId = materialLinkId,
+                                    attributeName = name,
+                                    attributeValue = value,
+                                )
+                            }
+                        )
+                        val failed = results.filterNot { it.isSuccess }
+                        if (failed.isEmpty()) {
+                            materialAttrsAssigned.incrementAndGet()
+                        } else {
+                            materialAttrFailures.incrementAndGet()
+                            failed.forEach {
+                                System.err.println(
+                                    "Заготовки: не удалось проставить атрибут '${it.attributeName}' на связь " +
+                                        "$materialLinkId: ${it.errorMessage}"
+                                )
+                            }
+                        }
+                    }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
                     System.err.println(
@@ -178,6 +252,9 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
             "связей заготовка-материал ${materialLinksCreated.get()}, " +
             "материал не найден в ПОЛИНОМ ${materialsNotFound.get()}, ошибок ${failures.get()}, " +
             "норм расхода назначено ${ratesAssigned.get()}, ошибок назначения нормы ${rateAttrFailures.get()}, " +
+            "атрибутов заготовки назначено ${blankAttrsAssigned.get()}, ошибок атрибутов заготовки ${blankAttrFailures.get()}, " +
+            "атрибутов материала основного назначено ${materialAttrsAssigned.get()}, " +
+            "ошибок атрибутов материала основного ${materialAttrFailures.get()}, " +
             "обозначение единицы не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}"
     )
 }

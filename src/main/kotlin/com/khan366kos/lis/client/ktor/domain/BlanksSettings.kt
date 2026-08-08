@@ -31,6 +31,15 @@ data class BlanksSettings(
     val rateColumn: String = "",
     val rateUnitColumn: String = "",
     val rateAttribute: String = "",
+    // Атрибуты ОБЪЕКТА "Заготовка" (Диаметр/Длина/Толщина и т.п., лист "Объекты", та же строка,
+    // что у детали) — см. AttributeResolver.resolveAttributesWithUnits/BlanksEngine.kt. Несколько
+    // разных attrColumn могут указывать на один и тот же loodsmanAttr (разные столбцы под разную
+    // форму заготовки) — на практике заполнен только один столбец из группы на строку.
+    val attributes: List<Attribute> = emptyList(),
+    // Атрибуты СВЯЗИ materialLinkType ("Изготавливается из ..." заготовка -> материал основной),
+    // НЕ атрибуты объекта материала — тот же приём, что уже используется для rateAttribute выше,
+    // но отдельный от неё вызов EditObject/up-link-attr-values в BlanksEngine.kt.
+    val materialAttributes: List<Attribute> = emptyList(),
 ) {
     companion object {
         val None = BlanksSettings()

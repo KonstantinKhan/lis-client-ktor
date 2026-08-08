@@ -61,6 +61,10 @@ data class MigrationContext(
     // (например "Раздел спецификации"="Материалы"). Лист "Связи" раздела спецификации не содержит
     // вообще — поэтому childClassifierId сверяется с этим набором, а не с полем на самой связи.
     val bomMaterialRowClassifierIds: MutableSet<Long> = mutableSetOf(),
+    // classifierId строки раздела "Материалы" -> резолвленные атрибуты объекта (mapping.materials.attributes,
+    // например "Марка"/"ГОСТ"), считанные с ЭТОЙ строки в processObjectRow. Нужны в runLinksMigration(),
+    // когда строится BomMaterialCandidate для потока C (см. MaterialsEngine.runBomMaterialsMigrationInternal).
+    val bomMaterialRowAttributes: MutableMap<Long, Map<String, String>> = mutableMapOf(),
     val bomMaterialCandidates: MutableList<BomMaterialCandidate> = mutableListOf(),
     // Кандидаты на варианты групп замены "аналог" (лист "Связи", столбец "группа аналогов") —
     // собираются синхронно в runLinksMigration() (flatMap classifierLinks -> linkPairs),

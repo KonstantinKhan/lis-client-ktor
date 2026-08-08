@@ -11,4 +11,8 @@ data class BomMaterialCandidate(
     val classifierCode: String,
     val quantity: Double,
     val unitDesignation: String?,
+    // Атрибуты объекта "Материал по КД" (mapping.materials.attributes), резолвленные со строки
+    // раздела "Материалы" на листе "Объекты" (MigrationContext.bomMaterialRowAttributes, ключ —
+    // classifierId этой строки = childClassifierId) — см. MigrationEngine.runLinksMigration.
+    val attributeValues: Map<String, String> = emptyMap(),
 )

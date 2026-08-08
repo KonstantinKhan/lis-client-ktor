@@ -7,6 +7,7 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.CreateBoObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeGroup2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewChangeVariant2InputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -206,6 +207,26 @@ private suspend fun MigrationContext.processMaterialCandidates(
     return linkedDetails.toMap()
 }
 
+// Атрибуты объекта "Материал по КД" (mapping.materials.attributes, например "Марка материала"/
+// "НТД на материал") — вызывается РОВНО один раз, сразу после createBoObject, только когда объект
+// реально создан (внутри elementCacheMutex.withLock у вызывающего кода), а не на каждое попадание
+// в elementCache. Проверяет isSuccess каждого результата (в отличие от createLoodsmanObject() в
+// MigrationEngine.kt, которая результат setValues игнорирует) — по аналогии с BlanksEngine.kt.
+private suspend fun MigrationContext.assignMaterialAttributes(materialLoodsmanId: Int, attributeValues: Map<String, String>) {
+    if (attributeValues.isEmpty()) return
+    val results = loodsmanClient.editObject.setValues(
+        sessionId,
+        attributeValues.map { (name, value) ->
+            UpAttrValuesByIdsInputDto(versionId = materialLoodsmanId, attributeName = name, attributeValue = value)
+        }
+    )
+    results.filterNot { it.isSuccess }.forEach {
+        System.err.println(
+            "Материал по КД: не удалось проставить атрибут '${it.attributeName}' на объект $materialLoodsmanId: ${it.errorMessage}"
+        )
+    }
+}
+
 private suspend fun MigrationContext.linkMaterialToDetail(
     materialLoodsmanId: Int,
     candidate: MaterialCandidate,
@@ -380,6 +401,7 @@ private suspend fun MigrationContext.resolveOrCreateMaterial(
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()
+        assignMaterialAttributes(created, candidate.attributeValues)
         created
     }
 }
@@ -552,6 +574,10 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
                         elementCache,
                         elementCacheMutex,
                         materialsCreated,
+                        // Все кандидаты группы (сгруппированы по childClassifierId) читают
+                        // атрибуты из одного и того же MigrationContext.bomMaterialRowAttributes —
+                        // значения идентичны у всех членов группы.
+                        attributeValues = group.first().attributeValues,
                     )
                 } catch (e: Exception) {
                     failures.incrementAndGet()
@@ -638,6 +664,11 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
     elementCache: MutableMap<Pair<Int, Int>, Int>,
     elementCacheMutex: Mutex,
     materialsCreated: AtomicInteger,
+    // Атрибуты объекта (mapping.materials.attributes) — задаются только вызывающим кодом потока C
+    // (runBomMaterialsMigrationInternal, target == materials.materialTarget). Остальные вызывающие
+    // места (BlanksEngine.kt/CastingBlanksEngine.kt/AuxMaterialsEngine.kt, другие target) параметр
+    // не передают — поведение для них не меняется.
+    attributeValues: Map<String, String> = emptyMap(),
 ): Int? {
     val found = callPolynom { token ->
         polynomClient.search.searchByStringProperty(
@@ -664,6 +695,7 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
         )
         elementCache[key] = created
         materialsCreated.incrementAndGet()
+        assignMaterialAttributes(created, attributeValues)
         created
     }
 }
