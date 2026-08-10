@@ -66,6 +66,8 @@
 | `quantityColumn` | string | `""` | `"конструкторское количество"` |
 | `unitColumn` | string | `""` | `"единица измерения входящего элемента в ДСЕ"` |
 | `unitExcludeValues` | string[] | `[]` | `["шт"]` |
+| `commentColumn` | string | `""` | `"Комментарий"` — столбец с произвольным текстом |
+| `commentAttribute` | string | `""` | `"Примечание"` — атрибут связи, куда записать значение `commentColumn` |
 
 Отличие от `objectsSheet`: `parentColumnIndex`/`childColumnIndex` — числовые индексы столбца
 (1-based), а `quantityColumn`/`unitColumn` — имена столбцов (ищутся по заголовку, не по
@@ -73,6 +75,11 @@
 `unitColumn: ""` означает "единицы измерения не резолвить вообще". `unitExcludeValues` —
 значения, при которых unit конкретной связи не трогается (остаётся дефолт API), даже если
 `unitColumn` в целом настроен.
+
+`commentColumn`/`commentAttribute` — атрибут СВЯЗИ (`EditObject/up-link-attr-values`), не
+атрибут объекта; проставляется на каждую создаваемую связь листа "Связи" без исключений по
+типу родителя/потомка. Пусто в любом из двух полей — атрибут не читается/не проставляется. См.
+[[04-business-logic.md]], шаг 2.
 
 ## `mapping.analogGroups` — группы аналогов (лист "Связи")
 

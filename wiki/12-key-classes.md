@@ -928,14 +928,16 @@ class SheetHeaders(
 
 **Файл:** `migration/LinkQuantityResolver.kt`
 
-**Сигнатура:**
+**Сигнатура (актуальный состав, предыдущая версия этого раздела была устаревшей заготовкой):**
 ```kotlin
-fun resolveLinkQuantity(rowView: RowView, config: LinksSheet): Double?
+fun resolveLinkQuantity(quantityColumn: String, row: RowView): Double?
 ```
 
-**Описание:** Резолвит количество связи из строки Excel.
+**Описание:** Резолвит количество связи из строки Excel. НЕ suspend, чистая функция.
+`quantityColumn.isBlank()` — всегда возвращает `1.0` (столбец не настроен, столбец не читается).
 
-**Возвращает:** Double или null, если колонка не настроена или значение не парсится.
+**Возвращает:** Double или null, если колонка настроена, но значение не парсится (запятая
+предварительно заменяется на точку).
 
 ---
 
@@ -943,18 +945,38 @@ fun resolveLinkQuantity(rowView: RowView, config: LinksSheet): Double?
 
 **Файл:** `migration/LinkUnitResolver.kt`
 
-**Сигнатура:**
+**Сигнатура (актуальный состав, предыдущая версия этого раздела была устаревшей заготовкой):**
 ```kotlin
-suspend fun resolveLinkUnitDesignation(
-    rowView: RowView,
-    config: LinksSheet,
-    loodsmanClient: Client
-): String?
+fun resolveLinkUnitDesignation(unitColumn: String, unitExcludeValues: List<String>, row: RowView): String?
 ```
 
-**Описание:** Резолвит единицу измерения связи.
+**Описание:** Резолвит ОБОЗНАЧЕНИЕ единицы измерения связи из строки Excel (не suspend, без
+похода в Loodsman — сам идентификатор единицы резолвится отдельно, `resolveUnitId` в
+`MigrationEngine.kt`, по уникальным обозначениям сразу для всех связей). `null` означает "unit
+связи не трогать вообще" — для пустого `unitColumn`, пустой ячейки и значений из
+`unitExcludeValues` (например "шт", "компл") одинаково.
 
 **Возвращает:** Обозначение единицы или null.
+
+---
+
+### LinkCommentResolver
+
+**Файл:** `migration/LinkCommentResolver.kt`
+
+**Сигнатура:**
+```kotlin
+fun resolveLinkComment(commentColumn: String, row: RowView): String?
+```
+
+**Описание:** Резолвит произвольный текстовый комментарий связи (`linksSheet.commentColumn`) из
+строки листа "Связи" — тот же приём, что `LinkQuantityResolver`/`LinkUnitResolver` (НЕ suspend,
+чистая функция). `commentColumn.isBlank()` — всегда `null` (фича выключена). Значение
+переносится в атрибут связи `linksSheet.commentAttribute` через `EditObject/up-link-attr-values`
+сразу после создания связи в `runLinksMigration()` (`MigrationEngine.kt`) — см.
+[[04-business-logic.md]], шаг 2.
+
+**Возвращает:** Текст комментария или null (столбец не настроен / ячейка пуста).
 
 ---
 

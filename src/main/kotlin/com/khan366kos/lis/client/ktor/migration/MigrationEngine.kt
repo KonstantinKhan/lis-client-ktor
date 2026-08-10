@@ -16,6 +16,7 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.ReferenceBoVersionInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpAttrValuesByIdsInputDto
+import com.khan366kos.lis.client.ktor.loodsman.api.dto.UpLinkAttrValuesInputDto
 import com.khan366kos.lis.client.ktor.polynom.api.dto.IdentifiableObjectDto
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -181,8 +182,19 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
     )
 }
 
-private data class LinkRowData(val quantity: Double?, val unitDesignation: String?, val analogGroup: AnalogGroupInfo?)
-private data class LinkPair(val parent: Identifier, val child: Identifier, val quantity: Double, val unitDesignation: String?)
+private data class LinkRowData(
+    val quantity: Double?,
+    val unitDesignation: String?,
+    val analogGroup: AnalogGroupInfo?,
+    val comment: String?,
+)
+private data class LinkPair(
+    val parent: Identifier,
+    val child: Identifier,
+    val quantity: Double,
+    val unitDesignation: String?,
+    val comment: String?,
+)
 private data class AnalogGroupInfo(val groupNumber: Int, val variantNumber: Int, val isBasic: Boolean)
 
 suspend fun MigrationContext.runLinksMigration() {
@@ -202,6 +214,8 @@ suspend fun MigrationContext.runLinksMigration() {
     val analogGroupsFailed = AtomicInteger(0)
     val parentsNotFound = AtomicInteger(0)
     val childrenNotFound = AtomicInteger(0)
+    val commentsAssigned = AtomicInteger(0)
+    val commentAttrFailures = AtomicInteger(0)
     val analogGroups = settings.mapping.analogGroups
 
     // identifiers уже полностью собраны (runObjectsMigration отработал раньше по pipeline) —
@@ -222,6 +236,7 @@ suspend fun MigrationContext.runLinksMigration() {
         // через bomMaterials) нужны одни и те же quantity/unitDesignation с ЭТОЙ строки "Связи".
         val quantity = resolveLinkQuantity(linksSheet.quantityColumn, rowView)
         val unitDesignation = resolveLinkUnitDesignation(linksSheet.unitColumn, linksSheet.unitExcludeValues, rowView)
+        val comment = resolveLinkComment(linksSheet.commentColumn, rowView)
 
         val childId = childRaw.toLongOrNull()
         if (childId == null) {
@@ -288,7 +303,8 @@ suspend fun MigrationContext.runLinksMigration() {
         // побеждает первое непустое значение, а не последняя строка.
         val parentLinks = classifierLinks.getOrPut(parentId) { mutableMapOf() }
         val mergedAnalogGroup = analogGroup ?: parentLinks[childId]?.analogGroup
-        parentLinks[childId] = LinkRowData(quantity, unitDesignation, mergedAnalogGroup)
+        val mergedComment = comment ?: parentLinks[childId]?.comment
+        parentLinks[childId] = LinkRowData(quantity, unitDesignation, mergedAnalogGroup, mergedComment)
     }
 
     val linkPairs = classifierLinks.flatMap { (parentClassifierId, children) ->
@@ -390,7 +406,7 @@ suspend fun MigrationContext.runLinksMigration() {
                             )
                         )
                     }
-                    LinkPair(parent, child, rowData.quantity, rowData.unitDesignation)
+                    LinkPair(parent, child, rowData.quantity, rowData.unitDesignation, rowData.comment)
                 }
             }
         }
@@ -425,7 +441,7 @@ suspend fun MigrationContext.runLinksMigration() {
                 // (родитель->потомок, без реверса), как у материалов.
                 val childLinkType = pair.child.childLinkType
                 val childOfSameTypeLinkType = pair.child.childOfSameTypeLinkType
-                when {
+                val linkId = when {
                     childLinkType != null && pair.parent.childLinkType != null && childOfSameTypeLinkType != null -> {
                         linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, childOfSameTypeLinkType, linksFailed, pair.quantity, unitId)
                     }
@@ -436,9 +452,38 @@ suspend fun MigrationContext.runLinksMigration() {
                         linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
                     }
                 }
+
+                // Атрибут связи (mapping.linksSheet.commentColumn -> commentAttribute, например
+                // "Комментарий" -> "Примечание") — на ЛЮБУЮ структурную связь этой строки, без
+                // фильтрации по типу объекта на любой из сторон, по решению пользователя.
+                if (linkId != null && pair.comment != null && linksSheet.commentAttribute.isNotBlank()) {
+                    val results = loodsmanClient.editObject.setLinkAttrValues(
+                        sessionId,
+                        listOf(
+                            UpLinkAttrValuesInputDto(
+                                linkId = linkId,
+                                attributeName = linksSheet.commentAttribute,
+                                attributeValue = pair.comment,
+                            )
+                        )
+                    )
+                    val failed = results.filterNot { it.isSuccess }
+                    if (failed.isEmpty()) {
+                        commentsAssigned.incrementAndGet()
+                    } else {
+                        commentAttrFailures.incrementAndGet()
+                        failed.forEach {
+                            System.err.println(
+                                "Связи: не удалось проставить атрибут '${it.attributeName}' на связь $linkId: ${it.errorMessage}"
+                            )
+                        }
+                    }
+                }
+
+                linkId
             }
         }.awaitAll()
-    }.count { it }
+    }.count { it != null }
 
     println(
         "Связи: строк ${dataRows.size}, пар для линковки ${linkPairs.size}, создано $linksCreated, " +
@@ -447,7 +492,8 @@ suspend fun MigrationContext.runLinksMigration() {
             "кандидатов на Материал по КД ${bomMaterialCandidates.size}, " +
             "кандидатов на группы аналогов ${analogGroupCandidates.size}, " +
             "ошибок групп аналогов ${analogGroupsFailed.get()}, " +
-            "родителей не найдено ${parentsNotFound.get()}, потомков не найдено ${childrenNotFound.get()}"
+            "родителей не найдено ${parentsNotFound.get()}, потомков не найдено ${childrenNotFound.get()}, " +
+            "атрибутов комментария назначено ${commentsAssigned.get()}, ошибок атрибута комментария ${commentAttrFailures.get()}"
     )
 
     runAnalogGroupsMigration()
@@ -857,7 +903,7 @@ private suspend fun MigrationContext.linkObjects(
     failCounter: AtomicInteger,
     quantity: Double = 1.0,
     unitId: String? = null
-): Boolean = try {
+): Int? = try {
     loodsmanClient.editObject.newLink(
         sessionId,
         NewLinkInputDto(
@@ -868,12 +914,11 @@ private suspend fun MigrationContext.linkObjects(
             maxQuantity = quantity,
             unitId = unitId
         )
-    )
-    true
+    ).asInt()
 } catch (e: Exception) {
     failCounter.incrementAndGet()
     System.err.println("Не удалось создать связь ($parentLoodsmanId -> $childLoodsmanId): ${e.message}")
-    false
+    null
 }
 
 // Без private — переиспользуется в CastingBlanksEngine.kt (свой отдельный лист Excel, тот же

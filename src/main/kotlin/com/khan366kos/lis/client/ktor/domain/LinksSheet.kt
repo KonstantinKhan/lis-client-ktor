@@ -15,7 +15,12 @@ data class LinksSheet(
     val linkType: String = "",
     val quantityColumn: String = "",
     val unitColumn: String = "",
-    val unitExcludeValues: List<String> = emptyList()
+    val unitExcludeValues: List<String> = emptyList(),
+    // Столбец с произвольным комментарием к строке "Связи" -> атрибут связи linkType (например
+    // "Комментарий" -> "Примечание"). Пусто в любом из двух полей — атрибут не читается/не
+    // проставляется, см. MigrationEngine.runLinksMigration.
+    val commentColumn: String = "",
+    val commentAttribute: String = ""
 
 ) : DataSheet {
 
