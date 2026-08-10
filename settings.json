@@ -29,7 +29,9 @@
       "linkType": "Состоит из ...",
       "quantityColumn": "конструкторское количество",
       "unitColumn": "единица измерения входящего элемента в ДСЕ",
-      "unitExcludeValues": ["шт"]
+      "unitExcludeValues": ["шт"],
+      "commentColumn": "Комментарий",
+      "commentAttribute": "Примечание"
     },
     "identifierColumn": "код классификатора",
     "attributes": [
