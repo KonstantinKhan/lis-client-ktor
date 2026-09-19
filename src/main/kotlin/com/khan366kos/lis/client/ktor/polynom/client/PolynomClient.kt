@@ -9,7 +9,6 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.request.url
 import io.ktor.http.encodedPath
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.sync.Semaphore
@@ -58,4 +57,5 @@ class PolynomClient(
     val classification = PolynomClassification(client, requestGate)
     val search = PolynomSearch(client, requestGate)
     val concepts = PolynomConcepts(client, requestGate)
+    val element = PolynomElement(client, requestGate)
 }

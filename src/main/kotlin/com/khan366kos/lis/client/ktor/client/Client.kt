@@ -1,9 +1,8 @@
 package com.khan366kos.lis.client.ktor.client
 
-import com.khan366kos.lis.client.ktor.client.getWithSession
-import com.khan366kos.lis.client.ktor.client.postWithSession
 import com.khan366kos.lis.client.ktor.domain.Connection
 import com.khan366kos.lis.client.ktor.logging.fileLogger
+import com.khan366kos.lis.client.ktor.polynom.client.PolynomElement
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -63,6 +62,7 @@ class Client(
     val measure = Measure(client, requestGate)
     val objectConfiguration = ObjectConfiguration(client, requestGate)
     val boReference = BoReference(client, requestGate)
+    val polynomElement = PolynomElement(client, requestGate)
 
     suspend fun user(): HttpResponse = client.get("Auth/current-user")
 

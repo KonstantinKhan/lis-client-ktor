@@ -271,7 +271,10 @@ private suspend fun MigrationContext.resolveOrCreateAnalogFallbackObject(
     // Обозначение при этом берётся не отдельным атрибутом, а автоматически из location-привязки
     // к найденному элементу ПОЛИНОМ (его "наименование") — тот же результат, другим путём.
     val element = IdentifiableObjectDto(found.objectId, found.typeId)
-    val location = callPolynom { token -> polynomClient.classification.getLocation(token, element) }
+    val location = callPolynom { token ->
+        polynomClient.element.getBoLocation(token, element)
+//        polynomClient.classification.getLocation(token, element)
+    }
     val created = loodsmanClient.editObject.createBoObject(
         sessionId,
         CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)
