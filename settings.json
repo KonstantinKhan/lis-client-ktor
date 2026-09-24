@@ -5,7 +5,9 @@
     "url": "http://127.0.0.1:8076/api/v4/",
     "maxConcurrentRequests": 50,
     "requestTimeoutMillis": 30000,
-    "connectTimeoutMillis": 10000
+    "connectTimeoutMillis": 10000,
+    "retryCount": 3,
+    "retryDelayMillis": 1000
   },
   "polynom": {
     "url": "http://127.0.0.1:5100/",

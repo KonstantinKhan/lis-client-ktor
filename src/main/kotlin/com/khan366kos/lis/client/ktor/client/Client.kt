@@ -44,12 +44,12 @@ class Client(
 
     val login = Login(client, connection, requestGate)
     val confMetaData = ConfMetaData(client, requestGate)
-    val editObject = EditObject(client, requestGate)
+    val editObject = EditObject(client, requestGate, connection.retryCount, connection.retryDelayMillis)
     val checkout = CheckOut(client, requestGate)
     val objectInfo = ObjectInfo(client, requestGate)
     val measure = Measure(client, requestGate)
     val objectConfiguration = ObjectConfiguration(client, requestGate)
-    val boReference = BoReference(client, requestGate)
+    val boReference = BoReference(client, requestGate, connection.retryCount, connection.retryDelayMillis)
 
     suspend fun user(): HttpResponse = client.get("Auth/current-user")
 

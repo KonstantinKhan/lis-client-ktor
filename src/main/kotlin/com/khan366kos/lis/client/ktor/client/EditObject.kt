@@ -19,7 +19,9 @@ import kotlinx.coroutines.sync.withPermit
 
 class EditObject(
     private val client: HttpClient,
-    private val requestGate: Semaphore
+    private val requestGate: Semaphore,
+    private val retryCount: Int = 3,
+    private val retryDelayMillis: Long = 1_000,
 ) {
     suspend fun newLink(sessionId: String, link: NewLinkInputDto): IdentifierDto =
         requestGate.withPermit {
@@ -86,7 +88,7 @@ class EditObject(
     // укладывается в requestTimeoutMillis; retry, а не withPermit, снаружи — permit не держится
     // на время задержки между попытками.
     suspend fun createBoObject(sessionId: String, data: CreateBoObjectInputDto): Int =
-        retryOnTransientError {
+        retryOnTransientError(times = retryCount, initialDelayMs = retryDelayMillis) {
             requestGate.withPermit {
                 client.postWithSession("EditObject/create-bo-object", sessionId) {
                     setBody(data)

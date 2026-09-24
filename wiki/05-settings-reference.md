@@ -23,12 +23,19 @@
 | `maxConcurrentRequests` | int | `10` | `50` |
 | `requestTimeoutMillis` | long | `30000` | `30000` |
 | `connectTimeoutMillis` | long | `10000` | `10000` |
+| `retryCount` | int | `3` | `3` |
+| `retryDelayMillis` | long | `1000` | `1000` |
 
 `maxConcurrentRequests` — размер `Client.requestGate: Semaphore`, единственная точка
 троттлинга ко всем эндпоинтам Loodsman разом (см. [[02-external-api-principles.md]]).
 
 `requestTimeoutMillis`/`connectTimeoutMillis` — параметры `HttpTimeout` в `Client.kt`. Раньше
 были захардкожены в коде, теперь читаются из `Connection` (дефолты те же значения).
+
+`retryCount`/`retryDelayMillis` — параметры `retryOnTransientError()` (`client/Helpers.kt`),
+используются `EditObject.createBoObject`/`BoReference.referenceBoVersion` (экспоненциальный
+backoff от `retryDelayMillis`, до `retryCount` попыток). Раньше были захардкожены как аргументы
+по умолчанию функции, теперь настраиваются через `Connection`. См. [[14-known-issues.md]].
 
 ## `polynom` — подключение к ПОЛИНОМ:MDM
 

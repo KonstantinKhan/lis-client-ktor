@@ -156,8 +156,9 @@ dataRows.chunked(1000).forEach { batch ->
 
 **Статус:** Частично решено. Реальный инцидент — `EditObject/create-bo-object` под нагрузкой
 иногда не укладывается в `requestTimeoutMillis` (30 сек), кандидат молча пропускался. Добавлен
-`retryOnTransientError()` (`client/Helpers.kt`, см. [[12-key-classes.md]]) — до 3 попыток,
-экспоненциальный backoff, ловит таймаут/5xx.
+`retryOnTransientError()` (`client/Helpers.kt`, см. [[12-key-classes.md]]) — до `retryCount`
+попыток (дефолт 3), экспоненциальный backoff от `retryDelayMillis` (дефолт 1000мс, настраиваются
+в `settings.json` → `connection`, см. [[05-settings-reference.md]]), ловит таймаут/5xx.
 
 **Что покрыто:** `EditObject.createBoObject` и `BoReference.referenceBoVersion`
 (`client/EditObject.kt`, `client/BoReference.kt`) — оба безопасны для повтора (уникальный индекс
