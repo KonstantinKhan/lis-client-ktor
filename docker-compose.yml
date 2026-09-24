@@ -1,0 +1,13 @@
+services:
+  lis-client:
+    build: .
+    # Логин/пароль вводятся вручную в консоли при старте (LoginWorkers.kt требует System.console()) —
+    # без stdin_open+tty он будет null и приложение сразу упадёт с ошибкой "Нет консоли".
+    stdin_open: true
+    tty: true
+    volumes:
+      # settings.json редактируется под конкретный запуск (URL Loodsman/ПОЛИНОМ, mapping) —
+      # монтируется, а не собирается в образ.
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+      # Путь внутри контейнера должен совпадать с mapping.source.path в settings.json.
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro

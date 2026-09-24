@@ -21,9 +21,14 @@
 | `remember` | bool | `false` | `false` |
 | `url` | string | — (обязательно) | `"http://127.0.0.1:8076/api/v4/"` |
 | `maxConcurrentRequests` | int | `10` | `50` |
+| `requestTimeoutMillis` | long | `30000` | `30000` |
+| `connectTimeoutMillis` | long | `10000` | `10000` |
 
 `maxConcurrentRequests` — размер `Client.requestGate: Semaphore`, единственная точка
 троттлинга ко всем эндпоинтам Loodsman разом (см. [[02-external-api-principles.md]]).
+
+`requestTimeoutMillis`/`connectTimeoutMillis` — параметры `HttpTimeout` в `Client.kt`. Раньше
+были захардкожены в коде, теперь читаются из `Connection` (дефолты те же значения).
 
 ## `polynom` — подключение к ПОЛИНОМ:MDM
 
@@ -34,8 +39,12 @@
 | `moduleName` | string | `"LIS-Client"` | `""` |
 | `clientType` | int | `8` | `0` |
 | `maxConcurrentRequests` | int | `5` | `5` |
+| `requestTimeoutMillis` | long | `30000` | `30000` |
+| `connectTimeoutMillis` | long | `10000` | `10000` |
 
 Отдельный семафор от Loodsman — конкурентность к двум системам регулируется независимо.
+`requestTimeoutMillis`/`connectTimeoutMillis` — тот же смысл, что у `connection`, но для
+`PolynomClient.kt`.
 
 ## `mapping.source` — источник Excel
 

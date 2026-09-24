@@ -9,6 +9,8 @@ data class PolynomConnection(
     val moduleName: String = "LIS-Client",
     val clientType: Int = 8,
     val maxConcurrentRequests: Int = 5,
+    val requestTimeoutMillis: Long = 30_000,
+    val connectTimeoutMillis: Long = 10_000,
 ) {
     companion object {
         val None = PolynomConnection(url = "")

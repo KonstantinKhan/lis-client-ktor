@@ -92,7 +92,26 @@ run.cmd
 
 **ВАЖНО:** Не используйте `./gradlew run` — авторизация требует интерактивную консоль (`System.console()`), которая недоступна под Gradle.
 
-### 3. Работа в REPL
+### 3. Запуск через Docker
+
+```bash
+cp .env.example .env   # поправить пути к settings.json / xlsx на хосте
+docker compose up --build
+```
+
+- `Dockerfile` — multi-stage: сборка через `installDist` (тот же путь, что `run.sh`), в рантайме
+  только JRE + собранный дистрибутив.
+- `docker-compose.yml` — `stdin_open: true` + `tty: true` обязательны: без реального tty
+  `System.console()` в контейнере тоже будет `null` (та же причина, что у `gradlew run` выше) —
+  `LoginWorkers.kt` упадёт с "Нет консоли".
+- Логин/пароль — только через консоль (`docker attach`/`docker compose up` без `-d`), в `.env`
+  или образ не кладутся.
+- `.env` (`SETTINGS_FILE`/`EXCEL_FILE`) задаёт только хостовые пути для volume-монтирования
+  `settings.json` и исходного xlsx в `/data` — не credentials.
+- `mapping.source.path` внутри примонтированного `settings.json` должен указывать на путь
+  внутри контейнера (`/data/data.xlsx`), не на хостовый путь.
+
+### 4. Работа в REPL
 
 После запуска вы попадёте в интерактивную консоль:
 

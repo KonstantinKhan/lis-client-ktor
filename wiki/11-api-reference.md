@@ -428,8 +428,8 @@ class Client(
             })
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 30_000
-            connectTimeoutMillis = 10_000
+            requestTimeoutMillis = connection.requestTimeoutMillis  // settings.json, дефолт 30_000
+            connectTimeoutMillis = connection.connectTimeoutMillis  // settings.json, дефолт 10_000
         }
     }
 }

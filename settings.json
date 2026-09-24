@@ -3,14 +3,18 @@
     "dbName": "loodsman",
     "remember": false,
     "url": "http://127.0.0.1:8076/api/v4/",
-    "maxConcurrentRequests": 50
+    "maxConcurrentRequests": 50,
+    "requestTimeoutMillis": 30000,
+    "connectTimeoutMillis": 10000
   },
   "polynom": {
     "url": "http://127.0.0.1:5100/",
     "storageId": null,
     "moduleName": "",
     "clientType": 0,
-    "maxConcurrentRequests": 5
+    "maxConcurrentRequests": 5,
+    "requestTimeoutMillis": 30000,
+    "connectTimeoutMillis": 10000
   },
   "mapping": {
     "source" : {
@@ -161,148 +165,6 @@
         ]
       },
       {
-        "target": "Технологическая деталь",
-        "source": "обозначение",
-        "state": "Проектирование",
-        "isProject": false,
-        "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ для",
-        "childOfSameTypeLinkType": "Изготавливается из ...",
-        "conditions": {
-          "single": {},
-          "or": [
-            {
-              "type": "endsWith",
-              "column": "обозначение",
-              "is": "Т"
-            },
-            {
-              "type": "endsWith",
-              "column": "обозначение",
-              "is": "T"
-            }
-          ],
-          "and": [
-            {
-              "type": "check",
-              "column": "Раздел спецификации",
-              "is": "Детали"
-            },
-            {
-              "type": "check",
-              "column": "Тип АСУП",
-              "is": "дет"
-            },
-            {
-              "type": "empty",
-              "column": "Тип объекта"
-            }
-          ]
-        },
-        "attributes": [
-          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
-        ]
-      },
-      {
-        "target": "Технологическая деталь",
-        "source": "обозначение",
-        "state": "Проектирование",
-        "isProject": false,
-        "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ для",
-        "childOfSameTypeLinkType": "Изготавливается из ...",
-        "conditions": {
-          "single": {},
-          "or": [],
-          "and": [
-            {
-              "type": "check",
-              "column": "Раздел спецификации",
-              "is": "Детали"
-            },
-            {
-              "type": "check",
-              "column": "Тип объекта",
-              "is": "Образец"
-            },
-            {
-              "type": "check",
-              "column": "Тип АСУП",
-              "is": "дет"
-            }
-          ]
-        },
-        "attributes": [
-          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
-        ]
-      },
-      {
-        "target": "Технологическая деталь",
-        "source": "обозначение",
-        "state": "Проектирование",
-        "isProject": false,
-        "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ для",
-        "childOfSameTypeLinkType": "Изготавливается из ...",
-        "conditions": {
-          "single": {},
-          "or": [],
-          "and": [
-            {
-              "type": "check",
-              "column": "Раздел спецификации",
-              "is": "Детали"
-            },
-            {
-              "type": "check",
-              "column": "Тип объекта",
-              "is": "Образец"
-            },
-            {
-              "type": "check",
-              "column": "Тип АСУП",
-              "is": "литье"
-            }
-          ]
-        },
-        "attributes": [
-          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
-        ]
-      },
-      {
-        "target": "Технологическая деталь",
-        "source": "обозначение",
-        "state": "Проектирование",
-        "isProject": false,
-        "linkToRoot": false,
-        "childLinkType": "Технологическая ДСЕ для",
-        "childOfSameTypeLinkType": "Изготавливается из ...",
-        "conditions": {
-          "single": {},
-          "or": [],
-          "and": [
-            {
-              "type": "check",
-              "column": "Раздел спецификации",
-              "is": "Детали"
-            },
-            {
-              "type": "check",
-              "column": "Тип объекта",
-              "is": "Заготовка"
-            },
-            {
-              "type": "check",
-              "column": "Тип АСУП",
-              "is": "литье"
-            }
-          ]
-        },
-        "attributes": [
-          { "attrColumn": "Масса детали", "loodsmanAttr": "Масса", "numeric": true }
-        ]
-      },
-      {
         "target": "Стандартное изделие",
         "source": "обозначение",
         "isProject": false,
@@ -412,98 +274,6 @@
       "productionQuantityWithoutMergeColumn": "количество производственное без объединения",
       "changeGroupNameTemplate": "Группа аналогов {group}",
       "variantNameTemplate": "Вариант {variant}"
-    },
-    "bomMaterials": {
-      "specificationConditions": {
-        "single": {
-          "type": "check",
-          "column": "конструкторская спецификация",
-          "is": "DS"
-        },
-        "or": [],
-        "and": []
-      },
-      "materialConditions": {
-        "single": {
-          "type": "check",
-          "column": "Раздел спецификации",
-          "is": "Материалы"
-        },
-        "or": [],
-        "and": []
-      }
-    },
-    "blanks": {
-      "target": "Заготовка",
-      "state": "Проектирование",
-      "linkType": "Заготовка для",
-      "materialTarget": "Материал основной",
-      "materialLinkType": "Изготавливается из ...",
-      "rateColumn": "Норма расхода",
-      "rateUnitColumn": "Единица измерения",
-      "rateAttribute": "Норма расхода",
-      "appliesToTargets": ["Деталь", "Технологическая деталь"],
-      "attributes": [
-        { "attrColumn": "Диаметр", "loodsmanAttr": "Диаметр", "unit": "мм", "numeric": true },
-        { "attrColumn": "Длина", "loodsmanAttr": "Длина", "unit": "мм", "numeric": true },
-        { "attrColumn": "Толщина", "loodsmanAttr": "Толщина", "unit": "мм", "numeric": true },
-        { "attrColumn": "Ширина", "loodsmanAttr": "Ширина", "unit": "мм", "numeric": true },
-        { "attrColumn": "Наружный диаметр", "loodsmanAttr": "Диаметр", "unit": "мм", "numeric": true },
-        { "attrColumn": "1-я стенка", "loodsmanAttr": "Высота", "unit": "мм", "numeric": true },
-        { "attrColumn": "2-я стенка", "loodsmanAttr": "Ширина", "unit": "мм", "numeric": true },
-        { "attrColumn": "Высота", "loodsmanAttr": "Высота", "unit": "мм", "numeric": true },
-        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Высота", "unit": "мм", "numeric": true },
-        { "attrColumn": "Сторона квадрата", "loodsmanAttr": "Ширина", "unit": "мм", "numeric": true },
-        { "attrColumn": "Стенка", "loodsmanAttr": "Толщина", "unit": "мм", "numeric": true },
-        { "attrColumn": "Сечение", "loodsmanAttr": "Диаметр", "unit": "мм", "numeric": true },
-        { "attrColumn": "КИМ", "loodsmanAttr": "Коэффициент использования материала", "numeric": true },
-        { "attrColumn": "Кол.дет из 1 заготовки", "loodsmanAttr": "Количество деталей из заготовки", "numeric": true },
-        { "attrColumn": "Масса заготовки", "loodsmanAttr": "Масса", "numeric": true },
-        { "attrColumn": "сплав/группа контроля", "loodsmanAttr": "Сплав/группа контроля" },
-        { "attrColumn": "тип продукции", "loodsmanAttr": "Тип продукции" },
-        { "attrColumn": "вид технологии литья", "loodsmanAttr": "Вид технологии литья" },
-        { "attrColumn": "вес отливки в килограммах", "loodsmanAttr": "Вес отливки в килограммах", "numeric": true },
-        { "attrColumn": "процент используемых отходов", "loodsmanAttr": "Процент используемых отходов", "numeric": true },
-        { "attrColumn": "процент безвозратных потерь от веса металлозавалки", "loodsmanAttr": "Процент безвозвратных потерь от веса металлозавалки", "numeric": true }
-      ],
-      "materialAttributes": [
-        { "attrColumn": "ЕН", "loodsmanAttr": "Единица нормирования материала" },
-        { "attrColumn": "Профиль заготовки", "loodsmanAttr": "Профиль заготовки" }
-      ]
-    },
-    "castingBlanks": {
-      "name": "Литейные заготовки связи",
-      "headersRowIndex": 1,
-      "parentColumnIndex": 1,
-      "childColumnIndex": 2,
-      "quantityColumn": "количество материала в литейной заготовке",
-      "unitColumn": "Ед. изм.",
-      "workshopColumn": "Цех-участок",
-      "materialTypeColumn": "Тип материала",
-      "setTarget": "Комплект вспомогательных материалов",
-      "setState": "Проектирование",
-      "setLinkType": "Потребность для",
-      "materialTarget": "Материал",
-      "auxMaterialTarget": "Материал вспомогательный",
-      "materialLinkType": "Состоит из ...",
-      "rateAttribute": "Норма расхода",
-      "workshopAttribute": "Цех-потребитель"
-    },
-    "auxMaterials": {
-      "name": "Вспомогательные материалы",
-      "headersRowIndex": 1,
-      "parentColumn": "Код классификатора ДСЕ",
-      "childColumn": "Код классификатора материала",
-      "quantityColumn": "Кол-во",
-      "unitColumn": "Ед.изм",
-      "workshopColumn": "Цех-участок",
-      "setTarget": "Комплект вспомогательных материалов",
-      "setState": "Проектирование",
-      "setLinkType": "Потребность для",
-      "materialTarget": "Материал вспомогательный",
-      "materialLinkType": "Состоит из ...",
-      "rateAttribute": "Норма расхода",
-      "workshopAttribute": "Цех-потребитель"
     }
   }
 }

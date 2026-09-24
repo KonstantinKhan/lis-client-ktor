@@ -250,10 +250,13 @@ println("Создано объектов: ${objectsCreated.get()}")
 
 ```kotlin
 install(HttpTimeout) {
-    requestTimeoutMillis = 30_000    // Таймаут запроса
-    connectTimeoutMillis = 10_000    // Таймаут подключения
+    requestTimeoutMillis = connection.requestTimeoutMillis    // из settings.json, дефолт 30_000
+    connectTimeoutMillis = connection.connectTimeoutMillis    // из settings.json, дефолт 10_000
 }
 ```
+
+Значения настраиваются в `settings.json` (`connection.requestTimeoutMillis`/
+`connectTimeoutMillis`, см. [[05-settings-reference.md]]) — раньше были захардкожены.
 
 **Важно:** При большом количестве конкурентных запросов возможны таймауты на стороне Loodsman.
 

@@ -47,3 +47,6 @@ bin/
 .kotlin/
 
 *.log
+
+### Docker ###
+.env

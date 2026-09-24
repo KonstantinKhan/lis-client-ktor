@@ -193,8 +193,8 @@ coalesced через `MigrationContext.polynomTokenMutex` — обновляет
 | Ограничение | Значение | Обходной путь |
 |-------------|----------|---------------|
 | Макс. конкурентных запросов | 10 (настраивается) | Измените `maxConcurrentRequests` в `settings.json` |
-| Таймаут запроса | 30 секунд | Измените `requestTimeoutMillis` в `Client.kt` |
-| Таймаут подключения | 10 секунд | Измените `connectTimeoutMillis` в `Client.kt` |
+| Таймаут запроса | 30 секунд (настраивается) | Измените `requestTimeoutMillis` в `settings.json` |
+| Таймаут подключения | 10 секунд (настраивается) | Измените `connectTimeoutMillis` в `settings.json` |
 
 ### Размер файлов
 
