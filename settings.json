@@ -27,6 +27,17 @@
       "name": "Объекты",
       "headersRowIndex": 1
     },
+    "documentsSheet": {
+      "name": "Документы",
+      "headersRowIndex": 1,
+      "objectNameColumn": "Объект",
+      "networkPathColumn": "Расположение файла",
+      "fileNameColumn": "Имя документа",
+      "source": {
+        "type": "xlsx",
+        "path": "test-data/documents.xlsx"
+      }
+    },
     "linksSheet": {
       "name": "Связи",
       "headersRowIndex": 1,

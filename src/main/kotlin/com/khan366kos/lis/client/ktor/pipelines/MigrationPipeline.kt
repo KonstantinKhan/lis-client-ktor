@@ -7,6 +7,7 @@ import com.khan366kos.lis.client.ktor.workers.migrateAuxMaterials
 import com.khan366kos.lis.client.ktor.workers.migrateBlanks
 import com.khan366kos.lis.client.ktor.workers.migrateBomMaterials
 import com.khan366kos.lis.client.ktor.workers.migrateCastingBlanks
+import com.khan366kos.lis.client.ktor.workers.migrateDocuments
 import com.khan366kos.lis.client.ktor.workers.migrateLinks
 import com.khan366kos.lis.client.ktor.workers.migrateMaterials
 import com.khan366kos.lis.client.ktor.workers.migrateObjects
@@ -21,4 +22,5 @@ object MigrationPipeline : ICorExec<MigrationContext> by pipeline<MigrationConte
     migrateBlanks()
     migrateCastingBlanks()
     migrateAuxMaterials()
+    migrateDocuments()
 }).build()

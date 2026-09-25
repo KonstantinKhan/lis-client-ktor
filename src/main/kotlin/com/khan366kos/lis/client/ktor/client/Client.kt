@@ -50,6 +50,8 @@ class Client(
     val measure = Measure(client, requestGate)
     val objectConfiguration = ObjectConfiguration(client, requestGate)
     val boReference = BoReference(client, requestGate, connection.retryCount, connection.retryDelayMillis)
+    val objectSearch = ObjectSearch(client, requestGate)
+    val file = FileEndpoint(client, requestGate)
 
     suspend fun user(): HttpResponse = client.get("Auth/current-user")
 

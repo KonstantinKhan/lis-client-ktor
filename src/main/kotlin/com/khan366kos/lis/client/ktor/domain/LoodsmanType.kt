@@ -9,6 +9,7 @@ sealed class LoodsmanType(
     ): LoodsmanType(name)
 
     data object Folder : LoodsmanType(name = "Папка")
+    data object PaperDocument : LoodsmanType(name = "Бумажный документ")
 }
 
 
