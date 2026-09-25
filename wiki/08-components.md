@@ -14,6 +14,8 @@
 - **`ObjectInfo.kt`** — чтение атрибутов объекта, получение связанных объектов
 - **`Measure.kt`** — работа с единицами измерения
 - **`ObjectConfiguration.kt`** — управление группами и вариантами замены
+- **`ObjectSearch.kt`** — поиск объектов (`find-by-simple-search`), используется для find-or-create корня "Сканы документов" (шаг G)
+- **`FileEndpoint.kt`** — прикрепление файлов к объекту (`File/add`), единственный multipart-запрос в клиенте (остальные — JSON), см. [[03-external-api-quirks.md]]
 - **`Helpers.kt`** — общие хелперы для инъекции сессионных заголовков
 
 ### `polynom/client/` — HTTP-клиенты к ПОЛИНОМ:MDM
@@ -33,6 +35,7 @@
 - **`Attribute.kt`**, **`ReplaceRule.kt`** — атрибуты и правила трансформации
 - **`Connection.kt`**, **`MaterialsSettings.kt`** — настройки подключений и материалов
 - **`BomMaterialsSettings.kt`** — настройки материалов по КД для DS-объектов
+- **`DocumentsSheet.kt`** — настройки шага G (сканы документов): колонки, опциональный отдельный `source`
 - **`MigrationContext.kt`** — сквозной контекст всей миграции (сессии, клиенты, состояния)
 - **`LoodsmanObject.kt`**, **`LoodsmanType.kt`**, **`LoodsmanState.kt`** — сущности Loodsman
 
@@ -74,6 +77,7 @@ Extension-функции для `ICorChainDsl<MigrationContext>`:
 
 - **`MigrationEngine.kt`** — основной движок миграции (объекты, связи)
 - **`MaterialsEngine.kt`** — движок материалов (сортаментные, заменители, группы замены)
+- **`DocumentsEngine.kt`** — шаг G: сканы документов (find-or-create корня, папки объектов, документы, `File/add`)
 - **`RuleEvaluator.kt`** — реестр интерпретаторов правил
 - **`ConditionsEvaluator.kt`** — матчинг условий (`single`/`or`/`and`)
 - **`AttributeResolver.kt`** — резолв значений атрибутов

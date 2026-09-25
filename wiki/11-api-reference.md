@@ -33,6 +33,13 @@
 | POST | `/EditObject/create-bo-object` | `client/EditObject.kt` | Создать бизнес-объект |
 | POST | `/EditObject/insert-object` | `client/Client.kt` | Вставить объект (гибкий) |
 
+### Поиск объектов / файлы (шаг G — сканы документов)
+
+| Метод | Эндпоинт | Файл | Описание |
+|-------|----------|------|----------|
+| POST | `/ObjectSearch/find-by-simple-search` | `client/ObjectSearch.kt` | Найти объект по значению атрибута (find-or-create корня "Сканы документов") |
+| POST | `/File/add` | `client/FileEndpoint.kt` | Прикрепить файл к объекту — **multipart/form-data**, единственный не-JSON эндпоинт в клиенте |
+
 ### Справочные объекты (ПОЛИНОМ)
 
 | Метод | Эндпоинт | Файл | Описание |
@@ -265,6 +272,77 @@ data class UpLinkAttrValuesOutputDto(
 `isSuccess=false` — не исключение, обычный 200 с телом; нужно проверять явно (например, если
 `unitGuid` не подходит под величину, закреплённую за атрибутом в схеме Loodsman).
 
+### Поиск объектов / файлы (шаг G — сканы документов)
+
+#### POST `/ObjectSearch/find-by-simple-search`
+
+**Файл:** `client/ObjectSearch.kt` (`findBySimpleSearch`)
+
+Используется только для find-or-create корня "Сканы документов" — единственное место в клиенте,
+где объект сначала ищется, а не создаётся безусловно (см. [[03-external-api-quirks.md]] про
+уникальность типа+ключевого атрибута).
+
+**Входные данные:**
+```kotlin
+data class FindObjectsSimpleInputDto(
+    val searchText: String? = null,
+    val searchVariant: Int,               // 0 в текущем использовании
+    val needSearchByKeyAttribute: Boolean,
+    val attributes: List<String> = emptyList(),
+    val types: List<String> = emptyList(), // имена типов, напр. ["Папка"]
+)
+```
+
+**Выходные данные** (массив; поля `name`/`version`/`labelName` — `nullable: true` в схеме
+Loodsman, DTO обязан объявлять их `String? = null`, не просто `String?` — см.
+[[03-external-api-quirks.md]]):
+```kotlin
+data class FindObjectsSimpleOutputDto(
+    val id: Int,           // versionId найденного объекта
+    val typeId: Int,
+    val stateId: Int,
+    val name: String? = null,
+    val version: String? = null,
+    val revision: Int,
+    val accessLevel: Int,
+    val label: Int,
+    val labelName: String? = null,
+    val hasLink: Int,
+    val lockId: Int,
+)
+```
+
+Клиент дополнительно фильтрует результат по точному совпадению `name` (поиск не гарантирует
+точное совпадение сам по себе).
+
+#### POST `/File/add`
+
+**Файл:** `client/FileEndpoint.kt` (`add`)
+
+**multipart/form-data**, не JSON — единственный такой эндпоинт в клиенте. Тело собирается через
+`MultiPartFormDataContent`/`formData {}` (`io.ktor.client.request.forms`):
+
+| Поле формы | Источник |
+|---|---|
+| `IdDocument` | versionId объекта "Бумажный документ" |
+| `FileName` | `documentsSheet.fileNameColumn`, с расширением |
+| `Directory` | всегда `""` |
+| `CreatedAt` / `ModifiedAt` | метаданные ФС файла (`Files.readAttributes`), фолбэк — момент запуска миграции |
+| `FileData` | содержимое файла, `ByteArray`, прочитано и провалидировано ДО вызова (см. [[04-business-logic.md]], шаг G) |
+
+**Про `Content-Type`**: `Client.kt` вешает глобальный `defaultRequest { contentType(Json) }` на
+ВСЕ запросы клиента. Это НЕ ломает multipart — Ktor резолвит финальный заголовок в
+`mergeHeaders()` (`io.ktor.client.engine.Utils`, движок CIO) с приоритетом
+`content.contentType ?: content.headers[ContentType] ?: requestHeaders[ContentType]`; тело
+`MultiPartFormDataContent` несёт свой `contentType` (`multipart/form-data; boundary=...`) и
+побеждает вне зависимости от `defaultRequest`. Проверено чтением исходников
+`ktor-client-core-jvm:2.3.11` (версия проекта), не только логически — реальный вопрос ревью
+перед мержем шага G, не баг.
+
+Не оборачивается в `retryOnTransientError()` — вызов не идемпотентен, повтор на таймауте создаёт
+ещё одно вложение к тому же `IdDocument`, а не перезаписывает старое (см.
+[[03-external-api-quirks.md]] про идемпотентность retry в целом).
+
 ### Справочные объекты (ПОЛИНОМ)
 
 #### POST `/BoReference/reference-bo-version`
@@ -468,6 +546,20 @@ suspend inline fun <reified T> HttpClient.postWithSession(
    - Подключение: 10 секунд
 
 4. **Сериализация:** Используется `kotlinx.serialization` с JSON, все DTO сериализуемы.
+
+5. **`ignoreUnknownKeys` не включён.** DTO для тела ответа обязан перечислять ВСЕ поля, которые
+   реально присылает Loodsman (см. `FindObjectsSimpleOutputDto` выше) — незнакомый ключ в JSON
+   валит десериализацию на первом же запросе, а не игнорируется молча.
+
+6. **`nullable: true` в схеме ≠ поле можно не объявлять с дефолтом.** `kotlinx.serialization`
+   требует присутствия ключа в JSON для КАЖДОГО поля без дефолтного значения, даже если тип
+   `String?` — отсутствие ключа целиком (не `null`, а именно отсутствие) валит десериализацию
+   `MissingFieldException`, если у поля нет `= null`. Реальный инцидент этой сессии: `name`/
+   `version`/`labelName` у `FindObjectsSimpleOutputDto` сначала были объявлены `String?` без
+   дефолта — компилируется, но при отсутствующем в ответе ключе упало бы в рантайме.
+
+7. **Multipart поверх глобального `defaultRequest { contentType(Json) }` работает корректно** —
+   см. `File/add` выше, `mergeHeaders()` отдаёт приоритет `content.contentType`.
 
 ## Связанные документы
 
