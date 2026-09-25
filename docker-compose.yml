@@ -9,5 +9,9 @@ services:
       # settings.json редактируется под конкретный запуск (URL Loodsman/ПОЛИНОМ, mapping) —
       # монтируется, а не собирается в образ.
       - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
-      # Путь внутри контейнера должен совпадать с mapping.source.path в settings.json.
       - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+    environment:
+      # settings.mapping.source.path в settings.json обычно содержит хостовый путь (для
+      # локального запуска) — переопределяем его здесь на путь внутри контейнера, куда
+      # смонтирован xlsx выше. См. MigrationEngine.excelInputStream().
+      - LIS_EXCEL_PATH=/data/data.xlsx

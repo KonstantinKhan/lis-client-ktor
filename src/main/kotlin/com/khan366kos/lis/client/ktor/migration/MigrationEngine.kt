@@ -923,4 +923,8 @@ private suspend fun MigrationContext.linkObjects(
 
 // Без private — переиспользуется в CastingBlanksEngine.kt (свой отдельный лист Excel, тот же
 // источник settings.mapping.source).
-fun MigrationContext.excelInputStream() = File(settings.mapping.source.path).inputStream()
+// LIS_EXCEL_PATH переопределяет settings.mapping.source.path, если задана — нужно для docker:
+// хостовый путь в settings.json (общий для локального запуска) не совпадает с путём внутри
+// контейнера, куда docker-compose монтирует xlsx (см. docker-compose.yml).
+fun MigrationContext.excelInputStream() =
+    File(System.getenv("LIS_EXCEL_PATH") ?: settings.mapping.source.path).inputStream()

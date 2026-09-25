@@ -12,14 +12,16 @@
 
 **Причина:** JVM форкается через pipe, консоли там нет — `System.console()` возвращает null.
 
-**Обходной путь:** Используйте `./run.sh` (Linux/WSL) или `run.cmd` (Windows).
+**Обходной путь:** запускайте собранный дистрибутив или fat jar напрямую, не через Gradle.
 
 ```bash
 # ❌ НЕ ДЕЛАЙТЕ ТАК
 ./gradlew run
 
 # ✅ ДЕЛАЙТЕ ТАК
-./run.sh
+./gradlew installDist && ./build/install/lis-client-ktor/bin/lis-client-ktor
+# или
+./gradlew shadowJar && java -Dfile.encoding=UTF-8 -jar build/libs/lis-client-ktor-0.0.1-all.jar
 ```
 
 ---
@@ -147,7 +149,7 @@ dataRows.chunked(1000).forEach { batch ->
 **Обходной путь:** Перенаправьте вывод в файл.
 
 ```bash
-./run.sh > migration.log 2>&1
+./build/install/lis-client-ktor/bin/lis-client-ktor > migration.log 2>&1
 ```
 
 ---
