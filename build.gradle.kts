@@ -26,6 +26,8 @@ dependencies {
 
     implementation(libs.logback.classic)
 
+    implementation(libs.log4j.to.slf4j)
+
     implementation(libs.poi)
 
     implementation("io.ktor:ktor-client-core:$ktorVersion")

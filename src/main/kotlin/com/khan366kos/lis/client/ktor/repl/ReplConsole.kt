@@ -16,6 +16,8 @@ class ReplConsole(
     private val prompt: String = ">>> ",
     private val commands: Map<String, ICommand> = defaultCommands(context)
 ) : IRepl {
+    private var commandHintShown = false
+
     suspend fun start() {
         println("=== Утилита миграции ЭСИ ===")
         println()
@@ -47,6 +49,11 @@ class ReplConsole(
                 }
 
                 ReplStatus.COMMAND -> {
+                    if (!commandHintShown) {
+                        println("Для запуска миграции введите migration, для выхода введите exit.")
+                        commandHintShown = true
+                    }
+
                     print(prompt)
 
                     val input = readlnOrNull()?.trim() ?: break
