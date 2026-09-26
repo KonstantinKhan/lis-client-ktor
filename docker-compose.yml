@@ -9,7 +9,11 @@ services:
       # settings.json редактируется под конкретный запуск (URL Loodsman/ПОЛИНОМ, mapping) —
       # монтируется, а не собирается в образ.
       - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+      # Исходный Excel файл (объекты, связи и/или сканы).
       - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+      # Сканы документов (опционально): папка с файлами или отдельный Excel.
+      # Оставить раскомментированным только если используется documentsSheet.
+      # - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro
     environment:
       # settings.mapping.source.path в settings.json обычно содержит хостовый путь (для
       # локального запуска) — переопределяем его здесь на путь внутри контейнера, куда
