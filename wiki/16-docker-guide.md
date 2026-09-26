@@ -384,6 +384,19 @@ docker compose up  # без -d
 - Проверьте пути в Excel — должны совпадать с mountpoint контейнера
 - Проверьте что папки смонтированы с `:ro` (read-only)
 
+**Stdin не работает (Windows): "Нажимаю Enter — ок, ввожу символы — выбрасывает на хост"**
+- На Windows Docker может иметь проблемы с forwarding stdin в интерактивный режим
+- **Решение:** запусти через bash контейнера:
+  ```bash
+  docker compose run --rm lis-client bash
+  ```
+  Потом внутри контейнера:
+  ```bash
+  /opt/lis-client-ktor/bin/lis-client-ktor
+  ```
+  Stdin будет работать стабильнее, потому что идет через bash контейнера
+- Альтернатива: используй `cmd` вместо PowerShell: `cmd` → `docker compose up`
+
 ---
 
 ## Переход между хостами
