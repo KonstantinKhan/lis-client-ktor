@@ -50,3 +50,6 @@ bin/
 
 ### Docker ###
 .env
+
+### Obsidian ###
+.obsidian/
