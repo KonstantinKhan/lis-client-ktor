@@ -2,7 +2,7 @@
   "connection": {
     "dbName": "loodsman",
     "remember": false,
-    "url": "http://127.0.0.1:8076/api/v4/",
+    "url": "https://impulsively-undamaged-amberjack.cloudpub.ru/api/v4/",
     "maxConcurrentRequests": 50,
     "requestTimeoutMillis": 30000,
     "connectTimeoutMillis": 10000,
@@ -10,7 +10,7 @@
     "retryDelayMillis": 1000
   },
   "polynom": {
-    "url": "http://127.0.0.1:5100/",
+    "url": "https://mentally-model-garpike.cloudpub.ru/",
     "storageId": null,
     "moduleName": "",
     "clientType": 0,
@@ -21,7 +21,7 @@
   "mapping": {
     "source" : {
       "type": "xlsx",
-      "path": "C:\\Users\\han\\Desktop\\data.xlsx"
+      "path": "/Users/khan/Downloads/construct_data.xlsx"
     },
     "objectsSheet": {
       "name": "Объекты",

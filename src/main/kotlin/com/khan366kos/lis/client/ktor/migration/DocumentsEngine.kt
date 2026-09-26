@@ -66,13 +66,21 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
         return
     }
 
+    println("Парсинг Excel: лист '${documents.name}'...")
     val rows = ExcelSaxParser().parse(documentsInputStream(), documents.name).toList()
+    println("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == documents.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${documents.headersRow}) на листе '${documents.name}'"
         )
+    println("  найдена строка заголовков (индекс ${documents.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    println("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > documents.headersRow }
+    println("  отфильтровано строк для обработки: ${dataRows.size}")
 
     val skippedRows = AtomicInteger(0)
     val documentRows = dataRows.mapNotNull { excelRow ->

@@ -42,13 +42,21 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
         return
     }
 
+    println("Парсинг Excel: лист '${auxMaterials.name}'...")
     val rows = ExcelSaxParser().parse(excelInputStream(), auxMaterials.name).toList()
+    println("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == auxMaterials.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${auxMaterials.headersRow}) на листе '${auxMaterials.name}'"
         )
+    println("  найдена строка заголовков (индекс ${auxMaterials.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    println("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > auxMaterials.headersRow }
+    println("  отфильтровано строк для обработки: ${dataRows.size}")
 
     val rateReadFailures = AtomicInteger(0)
     val candidatesByParent = mutableMapOf<Long, MutableList<AuxMaterialLinkCandidate>>()

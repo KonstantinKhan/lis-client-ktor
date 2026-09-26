@@ -39,6 +39,7 @@ private suspend fun MigrationContext.runMaterialsMigrationInternal() {
         return
     }
 
+    println("Миграция материалов: обработка ${materialCandidates.size} + ${materialSubstituteCandidates.size} кандидатов...")
     val materials = settings.mapping.materials
     // Прямые id из settings.json в приоритете; иначе — резолв по полному коду (absoluteCode),
     // полученному из админки Полином, через get-by-absolute-code (без concept-скоупа, без
@@ -547,6 +548,7 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
         return
     }
 
+    println("Миграция материалов по КД (DS): обработка ${bomMaterialCandidates.size} кандидатов...")
     val materials = settings.mapping.materials
     val classifierCodeProperty = materials.classifierCodePropertyId
         ?: resolvePropertyDefinitionByAbsoluteCode(materials.classifierCodePropertyAbsoluteCode)

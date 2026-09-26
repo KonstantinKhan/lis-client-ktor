@@ -39,6 +39,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
         return
     }
 
+    println("Миграция заготовок: обработка ${blankCandidates.size} кандидатов...")
     val blanks = settings.mapping.blanks
     val materials = settings.mapping.materials
     val classifierCodeProperty = materials.classifierCodePropertyId

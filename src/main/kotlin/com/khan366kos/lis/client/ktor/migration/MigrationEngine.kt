@@ -30,17 +30,26 @@ import java.util.concurrent.atomic.AtomicInteger
 // корутины большую часть времени просто ждут permit — это и есть единственная точка троттлинга.
 suspend fun MigrationContext.runObjectsMigration() {
     val objectsSheet = settings.mapping.objectsSheet
+    println("Парсинг Excel: лист '${objectsSheet.name}'...")
     val rows = ExcelSaxParser().parse(excelInputStream(), objectsSheet.name).toList()
+    println("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == objectsSheet.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${objectsSheet.headersRow}) на листе '${objectsSheet.name}'"
         )
+    println("  найдена строка заголовков (индекс ${objectsSheet.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    println("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > objectsSheet.headersRow }
+    println("  отфильтровано строк для обработки: ${dataRows.size}")
 
     val objectsCreated = AtomicInteger(0)
     val rowsFailed = AtomicInteger(0)
 
+    println("Обработка строк (параллельно)...")
     val results = coroutineScope {
         dataRows.map { excelRow ->
             async {
@@ -48,6 +57,7 @@ suspend fun MigrationContext.runObjectsMigration() {
             }
         }.awaitAll()
     }
+    println("  обработка завершена")
 
     // Слияние в общие списки идёт последовательно, после awaitAll() — сами row-корутины
     // ничего не пишут в identifiers/materialCandidates/bomMaterialSpecClassifierIds/
@@ -199,13 +209,22 @@ private data class AnalogGroupInfo(val groupNumber: Int, val variantNumber: Int,
 
 suspend fun MigrationContext.runLinksMigration() {
     val linksSheet = settings.mapping.linksSheet
+    println("Парсинг Excel: лист '${linksSheet.name}'...")
     val rows = ExcelSaxParser().parse(excelInputStream(), linksSheet.name).toList()
+    println("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == linksSheet.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${linksSheet.headersRow}) на листе '${linksSheet.name}'"
         )
+    println("  найдена строка заголовков (индекс ${linksSheet.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    println("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > linksSheet.headersRow }
+    println("  отфильтровано строк для обработки: ${dataRows.size}")
+    println("Связи: текущих объектов ${identifiers.size}, обработка ${dataRows.size} строк связей...")
 
     val linksFailed = AtomicInteger(0)
     val unitsNotFound = AtomicInteger(0)
