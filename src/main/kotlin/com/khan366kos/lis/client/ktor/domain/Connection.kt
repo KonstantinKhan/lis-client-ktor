@@ -8,6 +8,10 @@ data class Connection(
     val remember: Boolean = false,
     val url: String,
     val maxConcurrentRequests: Int = 10,
+    val requestTimeoutMillis: Long = 30_000,
+    val connectTimeoutMillis: Long = 10_000,
+    val retryCount: Int = 3,
+    val retryDelayMillis: Long = 1_000,
 ){
     companion object{
         val None = Connection(

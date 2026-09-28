@@ -1,12 +1,14 @@
 [versions]
 kotlin="2.4.10"
 kotlinxSerialization="1.11.0"
+log4j="2.24.3"
 logback="1.5.38"
 coroutines="1.11.0"
 poi="5.5.1"
 
 [libraries]
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization"}
+log4j-to-slf4j = { module = "org.apache.logging.log4j:log4j-to-slf4j", version.ref = "log4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 
 coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }

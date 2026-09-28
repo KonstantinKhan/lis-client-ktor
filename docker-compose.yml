@@ -1,0 +1,32 @@
+# Запуск из готового образа (без сборки на хосте — для серверов без интернета и исходников).
+# Образ собирается отдельно на машине с интернетом: docker build -t bom-migration:latest .
+# Перенос на офлайн-сервер: docker save -o bom-migration.tar bom-migration:latest  →  docker load -i bom-migration.tar
+services:
+  bom-migration:
+    image: bom-migration:latest
+    # Фиксированное имя контейнера: docker exec -it bom-migration bash
+    container_name: bom-migration
+    # Логин/пароль вводятся вручную в консоли при старте (LoginWorkers.kt требует System.console()) —
+    # без stdin_open+tty он будет null и приложение сразу упадёт с ошибкой "Нет консоли".
+    stdin_open: true
+    tty: true
+    volumes:
+      # === ПУТИ ДЛЯ НАСТРОЙКИ: переменные задаются в .env (см. .env.example) ===
+      # Слева — хостовые пути (их настраивает пользователь), справа — пути внутри
+      # контейнера (их менять не нужно; те же /data/... пути указываются в settings.json и Excel).
+
+      # Файл настроек (обязателен): URL Loodsman/ПОЛИНОМ, mapping.
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+
+      # Исходный Excel с объектами и связями (обязателен).
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+
+      # Отдельный Excel со сканами документов (опционален — только если в settings.json
+      # mapping.documentsSheet.source != null; там должен стоять путь /data/documents.xlsx).
+      # Не используется — закомментируй эту строку и DOCUMENTS_EXCEL в .env.
+      - ${DOCUMENTS_EXCEL:-./data/documents.xlsx}:/data/documents.xlsx:ro
+
+      # Папка с файлами сканов (опциональна). Колонка "Расположение файла" в Excel
+      # должна содержать контейнерные пути вида /data/documents/<имя файла>.
+      # Не используется — закомментируй эту строку и DOCUMENTS_FOLDER в .env.
+      - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro

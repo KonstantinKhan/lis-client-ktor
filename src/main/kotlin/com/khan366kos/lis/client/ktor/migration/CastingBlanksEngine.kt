@@ -49,13 +49,21 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
         return
     }
 
+    println("Парсинг Excel: лист '${castingBlanks.name}'...")
     val rows = ExcelSaxParser().parse(excelInputStream(), castingBlanks.name).toList()
+    println("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == castingBlanks.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${castingBlanks.headersRow}) на листе '${castingBlanks.name}'"
         )
+    println("  найдена строка заголовков (индекс ${castingBlanks.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    println("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > castingBlanks.headersRow }
+    println("  отфильтровано строк для обработки: ${dataRows.size}")
 
     val rateReadFailures = AtomicInteger(0)
     val candidatesByParent = mutableMapOf<Long, MutableList<CastingBlankLinkCandidate>>()
@@ -100,6 +108,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
         return
     }
 
+    println("Миграция литейных заготовок: обработка ${candidatesByParent.size} родителей...")
     val elementsByClassifierId = identifiers.groupBy { it.classifierId }
 
     val setsCreated = AtomicInteger(0)

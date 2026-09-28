@@ -48,4 +48,8 @@ bin/
 
 *.log
 
-/bom-migration.tar
+.idea/
+
+### Docker ###
+.env
+*.tar
