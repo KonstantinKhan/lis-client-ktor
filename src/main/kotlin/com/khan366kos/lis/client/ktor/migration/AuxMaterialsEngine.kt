@@ -12,7 +12,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.sync.Mutex
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("AuxMaterialsEngine")
 
 // Тай-брейк для resolveUnitId (см. MigrationEngine.kt) — НЕ фильтр: обозначение норм расхода не
 // всегда "Масса" (например "м2"/"м3" для других материалов), поэтому величина не режется заранее,
@@ -30,7 +33,7 @@ suspend fun MigrationContext.runAuxMaterialsMigration() {
     try {
         runAuxMaterialsMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
@@ -38,7 +41,7 @@ suspend fun MigrationContext.runAuxMaterialsMigration() {
 private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
     val auxMaterials = settings.mapping.auxMaterials
     if (auxMaterials.setTarget.isBlank()) {
-        println("Вспомогательные материалы: фича выключена (mapping.auxMaterials.setTarget пуст), пропускаем")
+        logger.info("Вспомогательные материалы: фича выключена (mapping.auxMaterials.setTarget пуст), пропускаем")
         return
     }
 
@@ -65,7 +68,7 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
             val parsed = rowView.value(column)?.replace(",", ".")?.toDoubleOrNull()
             if (parsed == null) {
                 rateReadFailures.incrementAndGet()
-                System.err.println(
+                logger.error(
                     "Вспомогательные материалы: норма расхода не прочитана в столбце '$column' (родитель " +
                         "'$parentId', код классификатора '$childCode') — связь будет создана без нормы"
                 )
@@ -85,7 +88,7 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
     }
 
     if (candidatesByParent.isEmpty()) {
-        println("Вспомогательные материалы: строк-кандидатов нет, пропускаем")
+        logger.info("Вспомогательные материалы: строк-кандидатов нет, пропускаем")
         return
     }
 
@@ -106,7 +109,7 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
                 val parents = elementsByClassifierId[parentClassifierId]
                 if (parents == null) {
                     parentsNotFound.incrementAndGet()
-                    println(
+                    logger.info(
                         "Вспомогательные материалы: родитель с кодом классификатора '$parentClassifierId' не " +
                             "найден среди созданных объектов — группа пропущена целиком"
                     )
@@ -166,7 +169,7 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
                     )
                     if (materialId == null) {
                         materialsNotFound.incrementAndGet()
-                        println(
+                        logger.info(
                             "Вспомогательные материалы: материал не найден в ПОЛИНОМ по коду классификатора " +
                                 "'${candidate.childClassifierCode}' (комплект $kitId)"
                         )
@@ -202,7 +205,7 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
                         } else {
                             rateAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Вспомогательные материалы: не удалось проставить '${auxMaterials.rateAttribute}' " +
                                         "на связи $materialLinkId: ${it.errorMessage}"
                                 )
@@ -233,7 +236,7 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
                         } else {
                             workshopAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Вспомогательные материалы: не удалось проставить '${auxMaterials.workshopAttribute}' " +
                                         "на связи $materialLinkId: ${it.errorMessage}"
                                 )
@@ -242,19 +245,19 @@ private suspend fun MigrationContext.runAuxMaterialsMigrationInternal() {
                     }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Вспомогательные материалы: не удалось создать/связать материал (комплект $kitId, код " +
                             "классификатора '${candidate.childClassifierCode}'): ${e.message}"
                     )
                     (e as? ResponseException)?.let {
-                        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
                     }
                 }
             }
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Вспомогательные материалы: групп ${candidatesByParent.size}, родителей не найдено " +
             "${parentsNotFound.get()}, создано комплектов ${setsCreated.get()}, связей комплект-родитель " +
             "${setLinksCreated.get()}, ошибок комплектов ${setFailures.get()}, создано материалов " +

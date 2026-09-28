@@ -6,14 +6,17 @@ import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.async
+import org.slf4j.LoggerFactory
 import java.util.Arrays
+
+private val logger = LoggerFactory.getLogger("LoginWorkers")
 
 fun ICorChainDsl<MigrationContext>.login() = worker {
     on { status == Status.LOGIN }
     handle {
         val console = System.console()
         if (console == null) {
-            System.err.println(
+            logger.error(
                 "Нет консоли. Запустите distribution-скриптом из терминала " +
                         "(build/install/.../bin/...), не 'gradlew run' — он форкает JVM " +
                         "через pipe, и System.console() всегда null."
@@ -46,11 +49,11 @@ fun ICorChainDsl<MigrationContext>.login() = worker {
         )
     }
     except { e ->
-        System.err.println("login failed: ${e::class.simpleName}: ${e.message}")
+        logger.error("login failed: ${e::class.simpleName}: ${e.message}")
         (e as? ClientRequestException)?.let {
-            System.err.println("HTTP ${it.response.status.value}")
+            logger.error("HTTP ${it.response.status.value}")
         }
-        System.err.println("Неверный логин или пароль. Повторите ввод.")
+        logger.error("Неверный логин или пароль. Повторите ввод.")
         status = Status.LOGIN
     }
 }

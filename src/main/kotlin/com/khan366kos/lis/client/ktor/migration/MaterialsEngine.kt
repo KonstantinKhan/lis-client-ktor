@@ -16,7 +16,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("MaterialsEngine")
 
 // Постобработка после runObjectsMigration()/runLinksMigration(): materialCandidates уже
 // полностью собраны (по одному на каждую строку "Деталь", см. processObjectRow), здесь они
@@ -28,14 +31,14 @@ suspend fun MigrationContext.runMaterialsMigration() {
     try {
         runMaterialsMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
 
 private suspend fun MigrationContext.runMaterialsMigrationInternal() {
     if (materialCandidates.isEmpty() && materialSubstituteCandidates.isEmpty()) {
-        println("Материалы: строк-кандидатов нет, пропускаем")
+        logger.info("Материалы: строк-кандидатов нет, пропускаем")
         return
     }
 
@@ -105,7 +108,7 @@ private suspend fun MigrationContext.processMaterialCandidates(
     elementCacheMutex: Mutex,
 ): Map<Int, Int> {
     if (candidates.isEmpty()) {
-        println("$label: строк-кандидатов нет, пропускаем")
+        logger.info("$label: строк-кандидатов нет, пропускаем")
         return emptyMap()
     }
 
@@ -143,7 +146,7 @@ private suspend fun MigrationContext.processMaterialCandidates(
                     )
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Не удалось создать материал по КД (обозначение='${representative.drawingDesignation}', " +
                             "код классификатора='${representative.classifierCode}'): ${e.message}"
                     )
@@ -166,7 +169,7 @@ private suspend fun MigrationContext.processMaterialCandidates(
                         ?.takeIf { it.isNotBlank() }
                         ?: "отсутствует"
                     val details = group.joinToString { "${it.detailClassifierCode} (Loodsman id ${it.detailLoodsmanId})" }
-                    println(
+                    logger.info(
                         "$label: материал пропущен (нет данных для создания): обозначение по чертежу=" +
                             "'$designation', детали: $details"
                     )
@@ -182,7 +185,7 @@ private suspend fun MigrationContext.processMaterialCandidates(
                 if (unlinkable.isNotEmpty()) {
                     detailsNotLinked.addAndGet(unlinkable.size)
                     val details = unlinkable.joinToString { "${it.detailClassifierCode} (Loodsman id ${it.detailLoodsmanId})" }
-                    println(
+                    logger.info(
                         "$label: обозначение по чертежу пустое — поиск в ПОЛИНОМ/создание материала для этих " +
                             "деталей не выполнялись: $details"
                     )
@@ -198,7 +201,7 @@ private suspend fun MigrationContext.processMaterialCandidates(
         }.awaitAll().flatten()
     }
 
-    println(
+    logger.info(
         "$label: уникальных ${candidatesByKey.size}, создано объектов ${materialsCreated.get()}, " +
             "связей с деталями ${linksCreated.get()}, пропущено групп ${skipped.get()}, " +
             "деталей без своего обозначения не привязано ${detailsNotLinked.get()}, ошибок ${failures.get()}"
@@ -231,11 +234,11 @@ private suspend fun MigrationContext.assignMaterialAttributes(materialLoodsmanId
                 UpAttrValueByIdInputDto(idVersion = materialLoodsmanId, attrName = name, attrValue = value)
             )
         } catch (e: Exception) {
-            System.err.println(
+            logger.error(
                 "Материал по КД: не удалось проставить атрибут '$name' на объект $materialLoodsmanId: ${e.message}"
             )
             (e as? ResponseException)?.let {
-                System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
             }
         }
     }
@@ -260,9 +263,9 @@ private suspend fun MigrationContext.linkMaterialToDetail(
     true
 } catch (e: Exception) {
     failures.incrementAndGet()
-    System.err.println("Не удалось связать материал ($materialLoodsmanId) с деталью (${candidate.detailLoodsmanId}): ${e.message}")
+    logger.error("Не удалось связать материал ($materialLoodsmanId) с деталью (${candidate.detailLoodsmanId}): ${e.message}")
     (e as? ResponseException)?.let {
-        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
     }
     false
 }
@@ -289,7 +292,7 @@ private suspend fun MigrationContext.createSubstituteChangeGroups(
 ) {
     val detailsWithBoth = substituteLinked.keys.filter { it in mainLinked }
     if (detailsWithBoth.isEmpty()) {
-        println("Группы замены материала: деталей с основным материалом и заменителем нет, пропускаем")
+        logger.info("Группы замены материала: деталей с основным материалом и заменителем нет, пропускаем")
         return
     }
 
@@ -309,7 +312,7 @@ private suspend fun MigrationContext.createSubstituteChangeGroups(
         )
     }
 
-    println(
+    logger.info(
         "Группы замены материала: деталей ${detailsWithBoth.size}, создано групп ${groupsCreated.get()}, " +
             "создано вариантов ${variantsCreated.get()}, ошибок ${failures.get()}"
     )
@@ -346,7 +349,7 @@ private suspend fun MigrationContext.createSubstituteChangeGroup(
 
         if (mainLinkId == null || substituteLinkId == null) {
             failures.incrementAndGet()
-            System.err.println(
+            logger.error(
                 "Группа замены (деталь $detailLoodsmanId): не найдена связь через get-linked-fast " +
                     "(основной материал $mainMaterialLoodsmanId -> idLink=$mainLinkId, " +
                     "заменитель $substituteMaterialLoodsmanId -> idLink=$substituteLinkId)"
@@ -377,9 +380,9 @@ private suspend fun MigrationContext.createSubstituteChangeGroup(
         variantsCreated.incrementAndGet()
     } catch (e: Exception) {
         failures.incrementAndGet()
-        System.err.println("Не удалось создать группу замены материала (деталь $detailLoodsmanId): ${e.message}")
+        logger.error("Не удалось создать группу замены материала (деталь $detailLoodsmanId): ${e.message}")
         (e as? ResponseException)?.let {
-            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+            logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
         }
     }
 }
@@ -536,14 +539,14 @@ suspend fun MigrationContext.runBomMaterialsMigration() {
     try {
         runBomMaterialsMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
 
 private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
     if (bomMaterialCandidates.isEmpty()) {
-        println("Материалы по КД (DS): кандидатов нет, пропускаем")
+        logger.info("Материалы по КД (DS): кандидатов нет, пропускаем")
         return
     }
 
@@ -595,14 +598,14 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
                     )
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Не удалось создать материал по КД (DS) для кода классификатора '$classifierCode': ${e.message}"
                     )
                     return@async
                 }
                 if (materialLoodsmanId == null) {
                     notFound.incrementAndGet()
-                    println("Материал по КД (DS) пропущен: код классификатора '$classifierCode' не найден в ПОЛИНОМ")
+                    logger.info("Материал по КД (DS) пропущен: код классификатора '$classifierCode' не найден в ПОЛИНОМ")
                     return@async
                 }
                 group.map { candidate ->
@@ -624,7 +627,7 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Материалы по КД (DS): уникальных кодов ${candidatesByCode.size}, создано объектов ${materialsCreated.get()}, " +
             "связей ${linksCreated.get()}, не найдено в ПОЛИНОМ ${notFound.get()}, ошибок ${failures.get()}, " +
             "единиц измерения назначено ${unitsAssigned.get()}, обозначение не найдено ${unitsNotFound.get()}, " +
@@ -656,11 +659,11 @@ private suspend fun MigrationContext.linkBomMaterialToParent(
         linksCreated.incrementAndGet()
     } catch (e: Exception) {
         failures.incrementAndGet()
-        System.err.println(
+        logger.error(
             "Не удалось связать материал по КД ($materialLoodsmanId) с объектом ($parentLoodsmanId): ${e.message}"
         )
         (e as? ResponseException)?.let {
-            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+            logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
         }
     }
 }

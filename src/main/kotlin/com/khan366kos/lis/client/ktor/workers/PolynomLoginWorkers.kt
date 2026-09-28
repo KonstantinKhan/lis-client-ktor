@@ -8,7 +8,10 @@ import com.khan366kos.lis.client.ktor.polynom.api.dto.SignInRequestDto
 import com.khan366kos.lis.client.ktor.repl.ReplStatus
 import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.async
+import org.slf4j.LoggerFactory
 import java.util.Arrays
+
+private val logger = LoggerFactory.getLogger("PolynomLoginWorkers")
 
 // Аналог workers/LoginWorkers.kt для ПОЛИНОМ: логин/пароль всегда запрашиваются в консоли
 // заново при каждом запуске, ничего не сохраняется на диск (по решению пользователя).
@@ -20,7 +23,7 @@ fun ICorChainDsl<MigrationContext>.polynomLogin() = worker {
     handle {
         val console = System.console()
         if (console == null) {
-            System.err.println(
+            logger.error(
                 "Нет консоли. Запустите distribution-скриптом из терминала " +
                     "(build/install/.../bin/...), не 'gradlew run' — он форкает JVM " +
                     "через pipe, и System.console() всегда null."
@@ -59,11 +62,11 @@ fun ICorChainDsl<MigrationContext>.polynomLogin() = worker {
         )
     }
     except { e ->
-        System.err.println("Вход в ПОЛИНОМ не выполнен: ${e::class.simpleName}: ${e.message}")
+        logger.error("Вход в ПОЛИНОМ не выполнен: ${e::class.simpleName}: ${e.message}")
         (e as? ClientRequestException)?.let {
-            System.err.println("HTTP ${it.response.status.value}")
+            logger.error("HTTP ${it.response.status.value}")
         }
-        System.err.println("Неверный логин или пароль ПОЛИНОМ. Повторите ввод.")
+        logger.error("Неверный логин или пароль ПОЛИНОМ. Повторите ввод.")
     }
 }
 
@@ -72,7 +75,7 @@ private suspend fun MigrationContext.chooseStorageId(console: java.io.Console): 
     if (storages.size == 1) return storages.first().storageId
 
     storages.forEachIndexed { index, storage ->
-        println("$index: ${storage.displayName ?: storage.storageId}")
+        logger.info("$index: ${storage.displayName ?: storage.storageId}")
     }
     val choice = console.readLine("Выберите хранилище ПОЛИНОМ (номер): ").trim().toIntOrNull()
     return storages.getOrNull(choice ?: -1)?.storageId

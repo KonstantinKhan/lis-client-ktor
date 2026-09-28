@@ -5,6 +5,9 @@ import com.khan366kos.lis.client.ktor.domain.Status
 import com.khan366kos.lis.client.ktor.dsl.core.ICorChainDsl
 import com.khan366kos.lis.client.ktor.dsl.worker
 import com.khan366kos.lis.client.ktor.mapping.toDomain
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("LoodsmanTypeWorkers")
 
 fun ICorChainDsl<MigrationContext>.allTypes() = worker {
     on { status == Status.LOGIN_SUCCESS }
@@ -23,6 +26,6 @@ fun ICorChainDsl<MigrationContext>.allTypes() = worker {
         )
     }
     except {
-        println(it.message)
+        logger.info(it.message)
     }
 }

@@ -12,7 +12,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.sync.Mutex
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("CastingBlanksEngine")
 
 private const val MATERIAL_TYPE_SAMPLE = "Образец"
 private const val MATERIAL_TYPE_MAIN = "Основной"
@@ -34,7 +37,7 @@ suspend fun MigrationContext.runCastingBlanksLinksMigration() {
     try {
         runCastingBlanksLinksMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
@@ -42,7 +45,7 @@ suspend fun MigrationContext.runCastingBlanksLinksMigration() {
 private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
     val castingBlanks = settings.mapping.castingBlanks
     if (castingBlanks.setTarget.isBlank()) {
-        println("Литейные заготовки: фича выключена (mapping.castingBlanks.setTarget пуст), пропускаем")
+        logger.info("Литейные заготовки: фича выключена (mapping.castingBlanks.setTarget пуст), пропускаем")
         return
     }
 
@@ -72,7 +75,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
             val parsed = rowView.value(column)?.replace(",", ".")?.toDoubleOrNull()
             if (parsed == null) {
                 rateReadFailures.incrementAndGet()
-                System.err.println(
+                logger.error(
                     "Литейные заготовки: норма расхода не прочитана в столбце '$column' (родитель " +
                         "'$parentId', код классификатора '$childCode') — связь будет создана без нормы"
                 )
@@ -93,7 +96,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
     }
 
     if (candidatesByParent.isEmpty()) {
-        println("Литейные заготовки: строк-кандидатов нет, пропускаем")
+        logger.info("Литейные заготовки: строк-кандидатов нет, пропускаем")
         return
     }
 
@@ -114,7 +117,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                 val parents = elementsByClassifierId[parentClassifierId]
                 if (parents == null) {
                     parentsNotFound.incrementAndGet()
-                    println(
+                    logger.info(
                         "Литейные заготовки: родитель с кодом классификатора '$parentClassifierId' не найден " +
                             "среди созданных объектов — группа пропущена целиком"
                     )
@@ -167,7 +170,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                 val target = when (candidate.materialType?.trim()) {
                     MATERIAL_TYPE_SAMPLE -> {
                         samplesSkipped.incrementAndGet()
-                        println(
+                        logger.info(
                             "Литейные заготовки: '$MATERIAL_TYPE_SAMPLE' не обрабатывается (родитель " +
                                 "${parent.loodsmanId}, код классификатора '${candidate.childClassifierCode}')"
                         )
@@ -177,7 +180,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                     MATERIAL_TYPE_AUXILIARY -> castingBlanks.auxMaterialTarget
                     else -> {
                         unknownMaterialTypes.incrementAndGet()
-                        System.err.println(
+                        logger.error(
                             "Литейные заготовки: неизвестный тип материала '${candidate.materialType}' (родитель " +
                                 "${parent.loodsmanId}, код классификатора '${candidate.childClassifierCode}') — строка пропущена"
                         )
@@ -197,7 +200,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                     )
                     if (materialId == null) {
                         materialsNotFound.incrementAndGet()
-                        println(
+                        logger.info(
                             "Литейные заготовки: материал не найден в ПОЛИНОМ по коду классификатора " +
                                 "'${candidate.childClassifierCode}' (комплект $kitId)"
                         )
@@ -233,7 +236,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                         } else {
                             rateAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Литейные заготовки: не удалось проставить '${castingBlanks.rateAttribute}' на " +
                                         "связи $materialLinkId: ${it.errorMessage}"
                                 )
@@ -264,7 +267,7 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                         } else {
                             workshopAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Литейные заготовки: не удалось проставить '${castingBlanks.workshopAttribute}' на " +
                                         "связи $materialLinkId: ${it.errorMessage}"
                                 )
@@ -273,19 +276,19 @@ private suspend fun MigrationContext.runCastingBlanksLinksMigrationInternal() {
                     }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Литейные заготовки: не удалось создать/связать материал (комплект $kitId, код " +
                             "классификатора '${candidate.childClassifierCode}'): ${e.message}"
                     )
                     (e as? ResponseException)?.let {
-                        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
                     }
                 }
             }
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Литейные заготовки: групп ${candidatesByParent.size}, родителей не найдено ${parentsNotFound.get()}, " +
             "создано комплектов ${setsCreated.get()}, связей комплект-родитель ${setLinksCreated.get()}, " +
             "ошибок комплектов ${setFailures.get()}, образцов пропущено ${samplesSkipped.get()}, " +
