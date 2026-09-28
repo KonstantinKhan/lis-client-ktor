@@ -4,5 +4,6 @@ sealed class LoodsmanState(
     val name: String,
 ) {
     data object ReadFolder : LoodsmanState("Папка для чтения")
+    data object Archive : LoodsmanState("Архив")
 }
 

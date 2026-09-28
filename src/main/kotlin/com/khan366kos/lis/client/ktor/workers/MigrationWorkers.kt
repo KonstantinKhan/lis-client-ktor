@@ -9,6 +9,7 @@ import com.khan366kos.lis.client.ktor.migration.runAuxMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runBlanksMigration
 import com.khan366kos.lis.client.ktor.migration.runBomMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runCastingBlanksLinksMigration
+import com.khan366kos.lis.client.ktor.migration.runDocumentsMigration
 import com.khan366kos.lis.client.ktor.migration.runLinksMigration
 import com.khan366kos.lis.client.ktor.migration.runMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runObjectsMigration
@@ -150,6 +151,21 @@ fun ICorChainDsl<MigrationContext>.migrateAuxMaterials() = worker {
         // Как и в migrateCastingBlanks() — статус+тело ответа печатаются внутри
         // runAuxMaterialsMigration(), except{} тут не suspend.
         System.err.println("Ошибка миграции вспомогательных материалов: ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateDocuments() = worker {
+    on { status == Status.AUX_MATERIALS_MIGRATED }
+    handle {
+        runDocumentsMigration()
+        status = Status.DOCUMENTS_MIGRATED
+        println("Миграция сканов документов завершена")
+    }
+    except { e ->
+        // Как и в migrateAuxMaterials() — статус+тело ответа печатаются внутри
+        // runDocumentsMigration(), except{} тут не suspend.
+        System.err.println("Ошибка миграции сканов документов: ${e.message}")
         throw e
     }
 }

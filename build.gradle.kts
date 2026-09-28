@@ -13,7 +13,7 @@ repositories {
 }
 
 application {
-    mainClass.set("com.khan366kos.lis.client.ktor.TestAppKt")
+    mainClass.set("com.khan366kos.lis.client.ktor.ApplicationKt")
     applicationDefaultJvmArgs = listOf("-Dfile.encoding=UTF-8")
 }
 
@@ -25,6 +25,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.logback.classic)
+
+    implementation(libs.log4j.to.slf4j)
 
     implementation(libs.poi)
 

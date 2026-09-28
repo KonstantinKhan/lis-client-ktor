@@ -21,9 +21,21 @@
 | `remember` | bool | `false` | `false` |
 | `url` | string | — (обязательно) | `"http://127.0.0.1:8076/api/v4/"` |
 | `maxConcurrentRequests` | int | `10` | `50` |
+| `requestTimeoutMillis` | long | `30000` | `30000` |
+| `connectTimeoutMillis` | long | `10000` | `10000` |
+| `retryCount` | int | `3` | `3` |
+| `retryDelayMillis` | long | `1000` | `1000` |
 
 `maxConcurrentRequests` — размер `Client.requestGate: Semaphore`, единственная точка
 троттлинга ко всем эндпоинтам Loodsman разом (см. [[02-external-api-principles.md]]).
+
+`requestTimeoutMillis`/`connectTimeoutMillis` — параметры `HttpTimeout` в `Client.kt`. Раньше
+были захардкожены в коде, теперь читаются из `Connection` (дефолты те же значения).
+
+`retryCount`/`retryDelayMillis` — параметры `retryOnTransientError()` (`client/Helpers.kt`),
+используются `EditObject.createBoObject`/`BoReference.referenceBoVersion` (экспоненциальный
+backoff от `retryDelayMillis`, до `retryCount` попыток). Раньше были захардкожены как аргументы
+по умолчанию функции, теперь настраиваются через `Connection`. См. [[14-known-issues.md]].
 
 ## `polynom` — подключение к ПОЛИНОМ:MDM
 
@@ -34,8 +46,12 @@
 | `moduleName` | string | `"LIS-Client"` | `""` |
 | `clientType` | int | `8` | `0` |
 | `maxConcurrentRequests` | int | `5` | `5` |
+| `requestTimeoutMillis` | long | `30000` | `30000` |
+| `connectTimeoutMillis` | long | `10000` | `10000` |
 
 Отдельный семафор от Loodsman — конкурентность к двум системам регулируется независимо.
+`requestTimeoutMillis`/`connectTimeoutMillis` — тот же смысл, что у `connection`, но для
+`PolynomClient.kt`.
 
 ## `mapping.source` — источник Excel
 
@@ -342,3 +358,20 @@ find/replace, несмотря на названия полей `find`/`target`)
 | `materialLinkType` | string | `""` | `"Состоит из ..."` |
 | `rateAttribute` | string | `""` | `"Норма расхода"` — АТРИБУТ СВЯЗИ |
 | `workshopAttribute` | string | `""` | `"Цех-потребитель"` — АТРИБУТ СВЯЗИ |
+
+## `mapping.documentsSheet` — сканы документов (шаг G, свой лист/файл Excel, финальный шаг)
+
+| Поле | Тип | Дефолт | Пример |
+|---|---|---|---|
+| `name` | string | `""` | `"Документы"` — имя листа Excel, пусто выключает шаг G целиком |
+| `headersRowIndex` | int, 1-based | `-1` | `1` |
+| `objectNameColumn` | string | `""` | `"Объект"` — обязателен, пустая ячейка = строка пропущена |
+| `documentTypeColumn` | string | `""` | `"Тип документа"` — НЕ обязателен, пустая ячейка = фолбэк `"Без типа"` (строка не пропускается) |
+| `networkPathColumn` | string | `""` | `"Расположение файла"` — обязателен |
+| `fileNameColumn` | string | `""` | `"Имя документа"` — обязателен, включая расширение |
+| `source` | `Source?` | `null` | `null` — тот же файл, что `mapping.source` (другой лист); задан — отдельный xlsx со своим `path` |
+
+Бизнес-константы шага (тип/состояние "Папка"/"Бумажный документ", тип связи "Состоит из ...",
+имя атрибута "Тип документа", название корня "Сканы документов") в `settings.json` НЕ вынесены —
+зафиксированы в `migration/DocumentsEngine.kt`, тем же приёмом, что имя корня "Миграция" в
+`MigrationContext.root` (см. [[04-business-logic.md]], шаг G, [[12-key-classes.md]]).
