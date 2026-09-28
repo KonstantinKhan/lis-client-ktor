@@ -2,7 +2,7 @@
   "connection": {
     "dbName": "loodsman",
     "remember": false,
-    "url": "https://impulsively-undamaged-amberjack.cloudpub.ru/api/v4/",
+    "url": "https://<ip>:8076/api/v4/",
     "maxConcurrentRequests": 50,
     "requestTimeoutMillis": 30000,
     "connectTimeoutMillis": 10000,
@@ -10,7 +10,7 @@
     "retryDelayMillis": 1000
   },
   "polynom": {
-    "url": "https://mentally-model-garpike.cloudpub.ru/",
+    "url": "https://<ip>:5100/",
     "storageId": null,
     "moduleName": "",
     "clientType": 0,
@@ -21,7 +21,7 @@
   "mapping": {
     "source" : {
       "type": "xlsx",
-      "path": "/Users/khan/Downloads/construct_data.xlsx"
+      "path": "/data/data.xlsx"
     },
     "objectsSheet": {
       "name": "Объекты",
@@ -36,7 +36,7 @@
       "fileNameColumn": "Имя документа",
       "source": {
         "type": "xlsx",
-        "path": "test-data/documents.xlsx"
+        "path": "/data/documents.xlsx"
       }
     },
     "linksSheet": {

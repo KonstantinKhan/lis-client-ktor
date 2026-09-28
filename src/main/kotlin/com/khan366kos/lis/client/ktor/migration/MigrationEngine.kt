@@ -146,7 +146,6 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
                 }
 
                 val location = try {
-                    println("found: $found")
                     callPolynom { token ->
                         polynomClient.element.getBoLocation(
                             token, IdentifiableObjectDto(found.objectId, found.typeId)

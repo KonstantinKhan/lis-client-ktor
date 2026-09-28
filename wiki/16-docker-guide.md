@@ -33,6 +33,28 @@ lis-client-ktor/
 
 ---
 
+## Офлайн-развёртывание (сервер без интернета и исходников)
+
+`docker-compose.yml` использует `image:` (не `build:`) — на целевом хосте исходники не нужны.
+
+На машине с интернетом:
+```bash
+docker build -t bom-migration:latest .
+docker save -o bom-migration.tar bom-migration:latest
+```
+
+Перенести на сервер: `bom-migration.tar`, `settings.json`, `data/*.xlsx`, `documents/`, `docker-compose.yml`, `.env`.
+
+На сервере:
+```bash
+docker load -i bom-migration.tar
+docker compose up
+```
+
+Базовые образы и Gradle-зависимости уже внутри tar — отдельно не переносятся.
+
+---
+
 ## Сценарий 1: Базовый запуск (Excel в локальной папке)
 
 **Структура файлов на хосте:**
@@ -63,15 +85,15 @@ C:\migration\
 **docker-compose.yml:**
 ```yaml
 services:
-  lis-client:
-    build: .
+  bom-migration:
+    image: bom-migration:latest
     stdin_open: true
     tty: true
     volumes:
-      - ./settings.json:/data/settings.json:ro
-      - ./data/data.xlsx:/data/data.xlsx:ro
-    environment:
-      - LIS_EXCEL_PATH=/data/data.xlsx
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+      # - ${DOCUMENTS_EXCEL:-./data/documents.xlsx}:/data/documents.xlsx:ro   # если используется отдельный Excel со сканами
+      # - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro                 # если сканы лежат в папке
 ```
 
 **Запуск:**
@@ -119,16 +141,14 @@ C:\migration\
 **docker-compose.yml:**
 ```yaml
 services:
-  lis-client:
-    build: .
+  bom-migration:
+    image: bom-migration:latest
     stdin_open: true
     tty: true
     volumes:
-      - ./settings.json:/data/settings.json:ro
-      - ./data/data.xlsx:/data/data.xlsx:ro
-      - ./data/documents.xlsx:/data/documents.xlsx:ro
-    environment:
-      - LIS_EXCEL_PATH=/data/data.xlsx
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+      - ${DOCUMENTS_EXCEL:-./data/documents.xlsx}:/data/documents.xlsx:ro
 ```
 
 ---
@@ -179,16 +199,14 @@ C:\migration\
 **docker-compose.yml:**
 ```yaml
 services:
-  lis-client:
-    build: .
+  bom-migration:
+    image: bom-migration:latest
     stdin_open: true
     tty: true
     volumes:
-      - ./settings.json:/data/settings.json:ro
-      - ./data/data.xlsx:/data/data.xlsx:ro
-      - ./documents:/data/documents:ro     # монтируем папку со сканами
-    environment:
-      - LIS_EXCEL_PATH=/data/data.xlsx
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+      - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro     # монтируем папку со сканами
 ```
 
 ---
@@ -202,16 +220,14 @@ services:
 **docker-compose.yml:**
 ```yaml
 services:
-  lis-client:
-    build: .
+  bom-migration:
+    image: bom-migration:latest
     stdin_open: true
     tty: true
     volumes:
-      - ./settings.json:/data/settings.json:ro
-      - ./data/data.xlsx:/data/data.xlsx:ro
-      - Z:/documents:/data/documents:ro   # маппированный диск Windows
-    environment:
-      - LIS_EXCEL_PATH=/data/data.xlsx
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+      - ${DOCUMENTS_FOLDER:-Z:/documents}:/data/documents:ro   # маппированный диск Windows
 ```
 
 **settings.json:**
@@ -242,8 +258,8 @@ services:
 **docker-compose.yml:**
 ```yaml
 volumes:
-  - ./settings.json:/data/settings.json:ro
-  - ./data/data.xlsx:/data/data.xlsx:ro
+  - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+  - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
   - Z:/documents:/data/server1/docs:ro     # первый источник
   - Y:/scans:/data/server2/scans:ro        # второй источник
   - ./local-docs:/data/local/docs:ro       # локальная папка
@@ -268,6 +284,7 @@ volumes:
 ```bash
 SETTINGS_FILE=./settings.json
 EXCEL_FILE=./data/data.xlsx
+DOCUMENTS_EXCEL=./data/documents.xlsx
 DOCUMENTS_FOLDER=./documents
 ```
 
@@ -276,6 +293,7 @@ DOCUMENTS_FOLDER=./documents
 volumes:
   - ${SETTINGS_FILE}:/data/settings.json:ro
   - ${EXCEL_FILE}:/data/data.xlsx:ro
+  - ${DOCUMENTS_EXCEL}:/data/documents.xlsx:ro
   - ${DOCUMENTS_FOLDER}:/data/documents:ro
 ```
 
@@ -317,14 +335,21 @@ docker compose up
 }
 ```
 
-### 2. `LIS_EXCEL_PATH` переопределяет путь из settings.json
+### 2. Путь к Excel берётся из settings.json
 
-```yaml
-environment:
-  - LIS_EXCEL_PATH=/data/data.xlsx
+```json
+{
+  "mapping": {
+    "source": {
+      "path": "/data/data.xlsx"   // путь ВНУТРИ контейнера — куда смонтирован EXCEL_FILE
+    }
+  }
+}
 ```
 
-Если эта переменная задана, приложение игнорирует `settings.mapping.source.path`.
+Переменная окружения `LIS_EXCEL_PATH` в compose НЕ задаётся. В коде она существует
+как опциональный override (MigrationEngine.excelInputStream()) — можно подменить файл
+без правки settings.json, но по умолчанию используется путь из settings.json.
 
 ### 3. `:ro` (read-only) безопаснее
 
@@ -366,6 +391,7 @@ docker compose up  # без -d
 - [ ] `docker-compose.yml` содержит volume-ы для всех файлов
 - [ ] Excel файлы существуют на хосте
 - [ ] Если используются документы — папка/файлы документов существуют
+- [ ] Образ `bom-migration` загружен на хост (`docker load`) или собран локально
 - [ ] Запускаете без флага `-d` (чтобы видеть консоль для ввода логина)
 
 ---
@@ -388,7 +414,7 @@ docker compose up  # без -d
 
 ## Переход между хостами
 
-1. Скопируйте весь проект на новый хост
+1. Загрузите образ на новый хост: `docker load -i bom-migration.tar` (исходники не нужны)
 2. Отредактируйте `settings.json` — URL, mapping
 3. Положите Excel файлы в нужные папки
 4. Отредактируйте `docker-compose.yml` — volume пути если нужно

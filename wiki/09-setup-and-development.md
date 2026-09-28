@@ -112,9 +112,10 @@ docker compose up --build
   кладутся.
 - `.env` (`SETTINGS_FILE`/`EXCEL_FILE`) задаёт только хостовые пути для volume-монтирования
   `settings.json` и исходного xlsx в `/data` — не credentials.
-- `settings.mapping.source.path` в `settings.json` обычно хранит хостовый путь (для локального
-  запуска) — внутри контейнера это переопределяет переменная окружения `LIS_EXCEL_PATH`
-  (задана в `docker-compose.yml` как `/data/data.xlsx`, см. `MigrationEngine.excelInputStream()`).
+- В docker-поставке `settings.mapping.source.path` в `settings.json` указывает контейнерный
+  путь `/data/data.xlsx` (файл монтируется через `EXCEL_FILE`); для локального запуска —
+  хостовый путь. Переменная окружения `LIS_EXCEL_PATH` — опциональный override
+  (`MigrationEngine.excelInputStream()`), по умолчанию не задаётся.
   Один и тот же `settings.json` подходит и для локального запуска, и для докера.
 
 ### 4. Работа в REPL
