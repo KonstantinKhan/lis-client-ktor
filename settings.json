@@ -2,7 +2,7 @@
   "connection": {
     "dbName": "loodsman",
     "remember": false,
-    "url": "http://<ip>:8076/api/v4/",
+    "url": "http://host.docker.internal:8076/api/v4/",
     "maxConcurrentRequests": 50,
     "requestTimeoutMillis": 30000,
     "connectTimeoutMillis": 10000,
@@ -10,7 +10,7 @@
     "retryDelayMillis": 1000
   },
   "polynom": {
-    "url": "http://<ip>:5100/",
+    "url": "http://host.docker.internal:5100/",
     "storageId": null,
     "moduleName": "",
     "clientType": 0,
@@ -34,6 +34,10 @@
       "documentTypeColumn": "Тип документа",
       "networkPathColumn": "Расположение файла",
       "fileNameColumn": "Имя документа",
+      "pathRewrite": {
+        "from": "C:\\Users\\han\\Desktop\\bom-migration-inner-test\\documents\\scans",
+        "to": "/data/documents"
+      },
       "source": {
         "type": "xlsx",
         "path": "/data/documents.xlsx"
