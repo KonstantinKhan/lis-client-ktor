@@ -19,6 +19,11 @@ data class DocumentsSheet(
     val networkPathColumn: String = "",
     val fileNameColumn: String = "",
     val source: Source? = null,
+    // Excel хранит "боевой" путь до шары как он есть (виндовый UNC/буква диска), без подгонки под
+    // окружение — контейнер (Linux) читает файлы не по нему напрямую, а по пути точки монтирования
+    // этой же шары внутри контейнера (docker-compose.yml, фиксированный /data/documents). null
+    // (дефолт) — networkPath используется как есть, без подмены.
+    val pathRewrite: PathRewrite? = null,
 ) : DataSheet {
 
     companion object {
@@ -27,3 +32,9 @@ data class DocumentsSheet(
 
     val headersRow: Int = rawHeadersRow - 1
 }
+
+@Serializable
+data class PathRewrite(
+    val from: String,
+    val to: String,
+)

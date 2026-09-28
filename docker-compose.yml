@@ -26,8 +26,17 @@ services:
       # Не используется — закомментируй эту строку и DOCUMENTS_EXCEL в .env.
       - ${DOCUMENTS_EXCEL:-./data/documents.xlsx}:/data/documents.xlsx:ro
 
-      # Папка с файлами сканов (опциональна). Колонка "Расположение файла" в Excel
-      # должна содержать контейнерные пути вида /data/documents/<имя файла>.
+      # Папка с файлами сканов (опциональна) — контейнерный путь фиксирован (/data/documents),
+      # хостовый настраивается через DOCUMENTS_FOLDER в .env (сетевая шара/локальная папка,
+      # должна быть реально смонтирована на этом хосте Docker — иначе файлов тут физически нет).
+      #
+      # Excel-колонка "Расположение файла" хранит РЕАЛЬНЫЙ виндовый путь до шары как есть, без
+      # подгонки под контейнер — перевод в /data/documents/... делает settings.json:
+      #   "documentsSheet": {
+      #     "pathRewrite": { "from": "\\\\server\\docs", "to": "/data/documents" }
+      #   }
+      # Оба шага (монтирование шары сюда + pathRewrite в settings.json) обязательны вместе,
+      # см. wiki/16-docker-guide.md, Сценарий 4.
       # Не используется — закомментируй эту строку и DOCUMENTS_FOLDER в .env.
       - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro
 

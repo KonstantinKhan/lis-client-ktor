@@ -1,6 +1,7 @@
 package com.khan366kos.lis.client.ktor.migration
 
 import com.khan366kos.lis.client.ktor.domain.MigrationContext
+import com.khan366kos.lis.client.ktor.domain.PathRewrite
 import com.khan366kos.lis.client.ktor.excel.ExcelSaxParser
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.FindObjectsSimpleInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
@@ -52,6 +53,22 @@ private class ValidatedDocumentFile(
     val createdAt: Instant,
     val modifiedAt: Instant,
 )
+
+// networkPath из Excel — реальный виндовый путь до шары (UNC/буква диска), тот же в любом
+// окружении, не подгоняется под контейнер. Контейнер эту шару видит по фиксированной точке
+// монтирования (docker-compose.yml) — pathRewrite переводит один путь в другой на лету. Замена
+// префикса без учёта регистра (буквы дисков/UNC-хосты в Windows регистронезависимы). Бэкслеши в
+// остатке пути меняются на "/" — java.nio.Paths на Linux не режет путь по "\", без замены
+// получится один "файл" с бэкслешами в имени вместо вложенных папок.
+private fun rewriteNetworkPath(networkPath: String, pathRewrite: PathRewrite?): String {
+    if (pathRewrite == null || !networkPath.startsWith(pathRewrite.from, ignoreCase = true)) {
+        return networkPath
+    }
+    val remainder = networkPath.substring(pathRewrite.from.length)
+        .replace('\\', '/')
+        .trimStart('/', '\\')
+    return if (remainder.isEmpty()) pathRewrite.to else "${pathRewrite.to.trimEnd('/')}/$remainder"
+}
 
 suspend fun MigrationContext.runDocumentsMigration() {
     try {
@@ -112,7 +129,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
     // (по решению пользователя — "не нужно создавать всё, что перед ним").
     val readFailed = AtomicInteger(0)
     val validatedFiles = documentRows.mapNotNull { row ->
-        val filePath = Paths.get(row.networkPath, row.fileName)
+        val filePath = Paths.get(rewriteNetworkPath(row.networkPath, documents.pathRewrite), row.fileName)
         runCatching {
             val fileData = Files.readAllBytes(filePath)
             val (createdAt, modifiedAt) = readFsTimestamps(filePath)
