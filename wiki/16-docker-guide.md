@@ -94,6 +94,7 @@ services:
       - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
       # - ${DOCUMENTS_EXCEL:-./data/documents.xlsx}:/data/documents.xlsx:ro   # если используется отдельный Excel со сканами
       # - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro                 # если сканы лежат в папке
+      - ${LOGS_DIR:-./logs}:/data/logs                                        # логи приложения (logs/app.log)
 ```
 
 **Запуск:**
@@ -286,6 +287,7 @@ SETTINGS_FILE=./settings.json
 EXCEL_FILE=./data/data.xlsx
 DOCUMENTS_EXCEL=./data/documents.xlsx
 DOCUMENTS_FOLDER=./documents
+LOGS_DIR=./logs
 ```
 
 **docker-compose.yml:**
@@ -295,6 +297,7 @@ volumes:
   - ${EXCEL_FILE}:/data/data.xlsx:ro
   - ${DOCUMENTS_EXCEL}:/data/documents.xlsx:ro
   - ${DOCUMENTS_FOLDER}:/data/documents:ro
+  - ${LOGS_DIR}:/data/logs
 ```
 
 **На каждом хосте:**
@@ -382,6 +385,22 @@ docker compose up  # без -d
 # Вы вводите логин/пароль прямо в терминал
 ```
 
+### 6. Логи (logs/app.log) — без volume теряются при пересоздании контейнера
+
+`WORKDIR /data` внутри контейнера, `logback.xml` пишет `logs/app.log` относительно рабочей
+директории → фактически `/data/logs/app.log`. `/data` целиком не монтируется (монтируются
+только отдельные файлы), поэтому без отдельного volume `logs/` живёт только в writable-слое
+контейнера и исчезает при `docker compose down`/пересоздании.
+
+```yaml
+volumes:
+  - ${LOGS_DIR:-./logs}:/data/logs
+```
+
+После этого лог на хосте: `./logs/app.log` (путь настраивается через `LOGS_DIR` в `.env`).
+Ротация (см. `src/main/resources/logback.xml`): по размеру (10MB) и дате, хранится 14 дней,
+общий лимит 200MB.
+
 ---
 
 ## Чек-лист перед первым запуском
@@ -389,6 +408,7 @@ docker compose up  # без -d
 - [ ] `settings.json` существует и содержит корректный URL Loodsman/ПОЛИНОМ
 - [ ] Пути в `settings.json` — это пути ВНУ­ТРИ контейнера (`/data/...`)
 - [ ] `docker-compose.yml` содержит volume-ы для всех файлов
+- [ ] Есть volume для `logs/` (`${LOGS_DIR:-./logs}:/data/logs`) — иначе логи теряются при пересоздании контейнера
 - [ ] Excel файлы существуют на хосте
 - [ ] Если используются документы — папка/файлы документов существуют
 - [ ] Образ `bom-migration` загружен на хост (`docker load`) или собран локально

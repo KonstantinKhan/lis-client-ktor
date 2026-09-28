@@ -30,3 +30,8 @@ services:
       # должна содержать контейнерные пути вида /data/documents/<имя файла>.
       # Не используется — закомментируй эту строку и DOCUMENTS_FOLDER в .env.
       - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro
+
+      # Логи приложения (logs/app.log относительно рабочей директории — /data в контейнере).
+      # Без этого volume каталог logs/ живёт только в writable-слое контейнера и
+      # теряется при пересоздании контейнера.
+      - ${LOGS_DIR:-./logs}:/data/logs
