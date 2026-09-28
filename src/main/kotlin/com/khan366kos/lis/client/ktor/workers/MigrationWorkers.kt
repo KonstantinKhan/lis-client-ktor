@@ -163,12 +163,12 @@ fun ICorChainDsl<MigrationContext>.migrateDocuments() = worker {
     handle {
         runDocumentsMigration()
         status = Status.DOCUMENTS_MIGRATED
-        println("Миграция сканов документов завершена")
+        logger.info("Миграция сканов документов завершена")
     }
     except { e ->
         // Как и в migrateAuxMaterials() — статус+тело ответа печатаются внутри
         // runDocumentsMigration(), except{} тут не suspend.
-        System.err.println("Ошибка миграции сканов документов: ${e.message}")
+        logger.error("Ошибка миграции сканов документов: ${e.message}")
         throw e
     }
 }

@@ -12,12 +12,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("DocumentsEngine")
 
 // Корень "Сканы документов" — тот же паттерн, что "Миграция" в MigrationContext.root, но, в
 // отличие от него, СНАЧАЛА ищется через ObjectSearch/find-by-simple-search — по решению
@@ -54,7 +57,7 @@ suspend fun MigrationContext.runDocumentsMigration() {
     try {
         runDocumentsMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
@@ -62,25 +65,25 @@ suspend fun MigrationContext.runDocumentsMigration() {
 private suspend fun MigrationContext.runDocumentsMigrationInternal() {
     val documents = settings.mapping.documentsSheet
     if (documents.name.isBlank()) {
-        println("Документы: не настроено, пропускаем")
+        logger.info("Документы: не настроено, пропускаем")
         return
     }
 
-    println("Парсинг Excel: лист '${documents.name}'...")
+    logger.info("Парсинг Excel: лист '${documents.name}'...")
     val rows = ExcelSaxParser().parse(documentsInputStream(), documents.name).toList()
-    println("  загружено строк: ${rows.size}")
+    logger.info("  загружено строк: ${rows.size}")
 
     val headerRow = rows.firstOrNull { it.rowIndex == documents.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${documents.headersRow}) на листе '${documents.name}'"
         )
-    println("  найдена строка заголовков (индекс ${documents.headersRow})")
+    logger.info("  найдена строка заголовков (индекс ${documents.headersRow})")
 
     val headerMap = SheetHeaders.build(headerRow.cells)
-    println("  построена карта полей (${headerMap.size} полей)")
+    logger.info("  построена карта полей (${headerMap.size} полей)")
 
     val dataRows = rows.filter { it.rowIndex > documents.headersRow }
-    println("  отфильтровано строк для обработки: ${dataRows.size}")
+    logger.info("  отфильтровано строк для обработки: ${dataRows.size}")
 
     val skippedRows = AtomicInteger(0)
     val documentRows = dataRows.mapNotNull { excelRow ->
@@ -91,7 +94,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
         val documentType = row.value(documents.documentTypeColumn) ?: DEFAULT_DOCUMENT_TYPE
         if (objectName == null || networkPath == null || fileName == null) {
             skippedRows.incrementAndGet()
-            System.err.println(
+            logger.error(
                 "Документы: строка ${excelRow.rowIndex + 1} пропущена — не заполнены обязательные поля"
             )
             return@mapNotNull null
@@ -100,7 +103,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
     }
 
     if (documentRows.isEmpty()) {
-        println("Документы: строк-кандидатов нет, пропускаем")
+        logger.info("Документы: строк-кандидатов нет, пропускаем")
         return
     }
 
@@ -116,7 +119,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
             ValidatedDocumentFile(row, fileData, createdAt, modifiedAt)
         }.onFailure { e ->
             readFailed.incrementAndGet()
-            System.err.println(
+            logger.error(
                 "Документы: файл '$filePath' недоступен (объект '${row.objectName}', тип " +
                     "'${row.documentType}') — папка/документ/связь не создаются: ${e.message}"
             )
@@ -124,7 +127,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
     }
 
     if (validatedFiles.isEmpty()) {
-        println("Документы: ни один файл не прочитан (ошибок чтения ${readFailed.get()}), создавать нечего")
+        logger.info("Документы: ни один файл не прочитан (ошибок чтения ${readFailed.get()}), создавать нечего")
         return
     }
 
@@ -162,12 +165,12 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
                     id
                 } catch (e: Exception) {
                     objectGroupsFailed.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Документы: не удалось создать папку объекта '$objectName' " +
                             "(${filesForObject.size} файл(ов) пропущено): ${e.message}"
                     )
                     (e as? ResponseException)?.let {
-                        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
                     }
                     return@async
                 }
@@ -205,7 +208,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
                                 )
                             )
                         ).filterNot { it.isSuccess }.forEach {
-                            System.err.println(
+                            logger.error(
                                 "Документы: не удалось проставить атрибут '$DOCUMENT_TYPE_ATTRIBUTE' " +
                                     "на документ $documentId: ${it.errorMessage}"
                             )
@@ -226,23 +229,23 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
                                 filesAttached.incrementAndGet()
                             } catch (e: Exception) {
                                 attachFailed.incrementAndGet()
-                                System.err.println(
+                                logger.error(
                                     "Документы: не удалось прикрепить файл '${validated.row.networkPath}/" +
                                         "${validated.row.fileName}' к документу $documentId: ${e.message}"
                                 )
                                 (e as? ResponseException)?.let {
-                                    System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                                    logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
                                 }
                             }
                         }
                     } catch (e: Exception) {
                         typeGroupsFailed.incrementAndGet()
-                        System.err.println(
+                        logger.error(
                             "Документы: не удалось создать документ '$objectName - $documentType' " +
                                 "(${filesForType.size} файл(ов) пропущено): ${e.message}"
                         )
                         (e as? ResponseException)?.let {
-                            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                            logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
                         }
                     }
                 }
@@ -250,7 +253,7 @@ private suspend fun MigrationContext.runDocumentsMigrationInternal() {
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Документы: строк ${documentRows.size} (пропущено ${skippedRows.get()}, файлов не прочитано " +
             "${readFailed.get()}), папок объектов создано ${foldersCreated.get()} (ошибок ${objectGroupsFailed.get()}), " +
             "документов создано ${documentsCreated.get()} (ошибок ${typeGroupsFailed.get()}), " +
