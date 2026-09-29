@@ -293,6 +293,52 @@ context.runAuxMaterialsMigration()
 
 ---
 
+### runDocumentsMigration()
+
+**Файл:** `migration/DocumentsEngine.kt`
+
+**Сигнатура:**
+```kotlin
+suspend fun MigrationContext.runDocumentsMigration()
+```
+
+**Описание:** Шаг G ("Сканы документов", `mapping.documentsSheet`) — последний шаг пайплайна,
+полностью независимый от всех остальных (свой лист/файл Excel, не читает `identifiers`). Читает
+строки листа (объект/тип документа/сетевой путь/имя файла, произвольные заголовки через
+`RowView`/`SheetHeaders`, как и остальные листы). Двухфазная обработка:
+
+1. **Валидация** — каждый файл читается (`Files.readAllBytes`) ДО любых запросов к Loodsman;
+   недоступный файл выбрасывает строку из обработки целиком (ни папка, ни документ, ни связь для
+   неё не создаются).
+2. **Создание** — только для прошедших валидацию файлов: find-or-create корня "Сканы документов"
+   (`resolveOrCreateDocumentsRoot()`, `ObjectSearch/find-by-simple-search`), затем `groupBy`
+   объект → создать/связать папку, затем вложенный `groupBy` тип документа → создать/связать
+   "Бумажный документ" (ключевой атрибут `"<объект> - <тип>"`, атрибут "Тип документа" через
+   `EditObject/up-attr-values-by-ids`), затем `File/add` на каждый файл группы (один документ —
+   несколько файлов, несколько вызовов `File/add` с одним и тем же `IdDocument`).
+
+Группы объектов обрабатываются параллельно (`async`/`awaitAll`, как остальные потоки), строки
+внутри одной группы объекта — последовательно (без гонки на создание общей папки/документа).
+
+**Использует:**
+- `resolveOrCreateDocumentsRoot()` (в этом же файле) — `ObjectSearch.findBySimpleSearch` +
+  fallback на `EditObject.create`
+- `readFsTimestamps()` (в этом же файле) — `Files.readAttributes`/`BasicFileAttributes`, фолбэк
+  — момент запуска
+- `FileEndpoint.add` — `File/add`, multipart (см. [[11-api-reference.md]])
+
+**Исключения:**
+- `ResponseException` — при ошибках API Loodsman (лог статуса+тела, проброс дальше на уровне
+  всего шага); ошибки на уровне отдельной папки/документа/файла ловятся ЛОКАЛЬНО (лог + счётчик,
+  остальные группы/файлы продолжают обрабатываться)
+
+**Пример использования:**
+```kotlin
+context.runDocumentsMigration()
+```
+
+---
+
 ### createMaterialsKit()
 
 **Файл:** `migration/MaterialsKitEngine.kt`
@@ -444,7 +490,8 @@ data class Mapping(
     val analogGroups: AnalogGroupsSettings = AnalogGroupsSettings.None,
     val blanks: BlanksSettings = BlanksSettings.None,
     val castingBlanks: CastingBlanksSettings = CastingBlanksSettings.None,
-    val auxMaterials: AuxMaterialsSettings = AuxMaterialsSettings.None
+    val auxMaterials: AuxMaterialsSettings = AuxMaterialsSettings.None,
+    val documentsSheet: DocumentsSheet = DocumentsSheet.None
 )
 ```
 

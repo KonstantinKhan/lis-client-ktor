@@ -1,0 +1,46 @@
+# Запуск из готового образа (без сборки на хосте — для серверов без интернета и исходников).
+# Образ собирается отдельно на машине с интернетом: docker build -t bom-migration:latest .
+# Перенос на офлайн-сервер: docker save -o bom-migration.tar bom-migration:latest  →  docker load -i bom-migration.tar
+services:
+  bom-migration:
+    image: bom-migration:latest
+    # Фиксированное имя контейнера: docker exec -it bom-migration bash
+    container_name: bom-migration
+    # Логин/пароль вводятся вручную в консоли при старте (LoginWorkers.kt требует System.console()) —
+    # без stdin_open+tty он будет null и приложение сразу упадёт с ошибкой "Нет консоли".
+    stdin_open: true
+    tty: true
+    volumes:
+      # === ПУТИ ДЛЯ НАСТРОЙКИ: переменные задаются в .env (см. .env.example) ===
+      # Слева — хостовые пути (их настраивает пользователь), справа — пути внутри
+      # контейнера (их менять не нужно; те же /data/... пути указываются в settings.json и Excel).
+
+      # Файл настроек (обязателен): URL Loodsman/ПОЛИНОМ, mapping.
+      - ${SETTINGS_FILE:-./settings.json}:/data/settings.json:ro
+
+      # Исходный Excel с объектами и связями (обязателен).
+      - ${EXCEL_FILE:-./data/data.xlsx}:/data/data.xlsx:ro
+
+      # Отдельный Excel со сканами документов (опционален — только если в settings.json
+      # mapping.documentsSheet.source != null; там должен стоять путь /data/documents.xlsx).
+      # Не используется — закомментируй эту строку и DOCUMENTS_EXCEL в .env.
+      - ${DOCUMENTS_EXCEL:-./data/documents.xlsx}:/data/documents.xlsx:ro
+
+      # Папка с файлами сканов (опциональна) — контейнерный путь фиксирован (/data/documents),
+      # хостовый настраивается через DOCUMENTS_FOLDER в .env (сетевая шара/локальная папка,
+      # должна быть реально смонтирована на этом хосте Docker — иначе файлов тут физически нет).
+      #
+      # Excel-колонка "Расположение файла" хранит РЕАЛЬНЫЙ виндовый путь до шары как есть, без
+      # подгонки под контейнер — перевод в /data/documents/... делает settings.json:
+      #   "documentsSheet": {
+      #     "pathRewrite": { "from": "\\\\server\\docs", "to": "/data/documents" }
+      #   }
+      # Оба шага (монтирование шары сюда + pathRewrite в settings.json) обязательны вместе,
+      # см. wiki/16-docker-guide.md, Сценарий 4.
+      # Не используется — закомментируй эту строку и DOCUMENTS_FOLDER в .env.
+      - ${DOCUMENTS_FOLDER:-./documents}:/data/documents:ro
+
+      # Логи приложения (logs/app.log относительно рабочей директории — /data в контейнере).
+      # Без этого volume каталог logs/ живёт только в writable-слое контейнера и
+      # теряется при пересоздании контейнера.
+      - ${LOGS_DIR:-./logs}:/data/logs

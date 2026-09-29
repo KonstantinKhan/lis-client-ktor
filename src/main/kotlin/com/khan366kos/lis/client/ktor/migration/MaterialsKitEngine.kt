@@ -6,7 +6,10 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewLinkInputDto
 import com.khan366kos.lis.client.ktor.loodsman.api.dto.NewObjectInputDto
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("MaterialsKitEngine")
 
 // Общий приём "создать Комплект вспомогательных материалов на родителя, реверсивная связь на
 // родителя" — переиспользуется CastingBlanksEngine.kt (литейные заготовки: связи) и
@@ -49,11 +52,11 @@ suspend fun MigrationContext.createMaterialsKit(
     kitId
 } catch (e: Exception) {
     setFailures.incrementAndGet()
-    System.err.println(
+    logger.error(
         "Комплект вспомогательных материалов: не удалось создать (родитель ${parent.loodsmanId}): ${e.message}"
     )
     (e as? ResponseException)?.let {
-        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
     }
     null
 }

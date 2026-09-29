@@ -16,7 +16,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("MaterialsEngine")
 
 // Постобработка после runObjectsMigration()/runLinksMigration(): materialCandidates уже
 // полностью собраны (по одному на каждую строку "Деталь", см. processObjectRow), здесь они
@@ -28,17 +31,18 @@ suspend fun MigrationContext.runMaterialsMigration() {
     try {
         runMaterialsMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
 
 private suspend fun MigrationContext.runMaterialsMigrationInternal() {
     if (materialCandidates.isEmpty() && materialSubstituteCandidates.isEmpty()) {
-        println("Материалы: строк-кандидатов нет, пропускаем")
+        logger.info("Материалы: строк-кандидатов нет, пропускаем")
         return
     }
 
+    logger.info("Миграция материалов: обработка ${materialCandidates.size} + ${materialSubstituteCandidates.size} кандидатов...")
     val materials = settings.mapping.materials
     // Прямые id из settings.json в приоритете; иначе — резолв по полному коду (absoluteCode),
     // полученному из админки Полином, через get-by-absolute-code (без concept-скоупа, без
@@ -105,7 +109,7 @@ private suspend fun MigrationContext.processMaterialCandidates(
     elementCacheMutex: Mutex,
 ): Map<Int, Int> {
     if (candidates.isEmpty()) {
-        println("$label: строк-кандидатов нет, пропускаем")
+        logger.info("$label: строк-кандидатов нет, пропускаем")
         return emptyMap()
     }
 
@@ -143,9 +147,9 @@ private suspend fun MigrationContext.processMaterialCandidates(
                     )
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Не удалось создать материал по КД (обозначение='${representative.drawingDesignation}', " +
-                            "код классификатора='${representative.classifierCode}'): ${e.message}"
+                                "код классификатора='${representative.classifierCode}'): ${e.message}"
                     )
                     return@async emptyList<Pair<Int, Int>>()
                 }
@@ -166,9 +170,9 @@ private suspend fun MigrationContext.processMaterialCandidates(
                         ?.takeIf { it.isNotBlank() }
                         ?: "отсутствует"
                     val details = group.joinToString { "${it.detailClassifierCode} (Loodsman id ${it.detailLoodsmanId})" }
-                    println(
+                    logger.info(
                         "$label: материал пропущен (нет данных для создания): обозначение по чертежу=" +
-                            "'$designation', детали: $details"
+                                "'$designation', детали: $details"
                     )
                     return@async emptyList<Pair<Int, Int>>()
                 }
@@ -182,15 +186,21 @@ private suspend fun MigrationContext.processMaterialCandidates(
                 if (unlinkable.isNotEmpty()) {
                     detailsNotLinked.addAndGet(unlinkable.size)
                     val details = unlinkable.joinToString { "${it.detailClassifierCode} (Loodsman id ${it.detailLoodsmanId})" }
-                    println(
+                    logger.info(
                         "$label: обозначение по чертежу пустое — поиск в ПОЛИНОМ/создание материала для этих " +
-                            "деталей не выполнялись: $details"
+                                "деталей не выполнялись: $details"
                     )
                 }
 
                 linkable.map { candidate ->
                     async {
-                        val linked = linkMaterialToDetail(materialLoodsmanId, candidate, materials.detailLinkType, linksCreated, failures)
+                        val linked = linkMaterialToDetail(
+                            materialLoodsmanId,
+                            candidate,
+                            materials.detailLinkType,
+                            linksCreated,
+                            failures
+                        )
                         if (linked) candidate.detailLoodsmanId to materialLoodsmanId else null
                     }
                 }.awaitAll().filterNotNull()
@@ -198,10 +208,10 @@ private suspend fun MigrationContext.processMaterialCandidates(
         }.awaitAll().flatten()
     }
 
-    println(
+    logger.info(
         "$label: уникальных ${candidatesByKey.size}, создано объектов ${materialsCreated.get()}, " +
-            "связей с деталями ${linksCreated.get()}, пропущено групп ${skipped.get()}, " +
-            "деталей без своего обозначения не привязано ${detailsNotLinked.get()}, ошибок ${failures.get()}"
+                "связей с деталями ${linksCreated.get()}, пропущено групп ${skipped.get()}, " +
+                "деталей без своего обозначения не привязано ${detailsNotLinked.get()}, ошибок ${failures.get()}"
     )
 
     return linkedDetails.toMap()
@@ -223,7 +233,10 @@ private suspend fun MigrationContext.processMaterialCandidates(
 // EditObject/up-attr-value-by-id: та же операция, что setValues (батч), без location/bindingRuleId,
 // но, судя по всему, БЕЗ встроенной проверки на ПОЛИНОМ-интеграцию, которая блокирует батчевый
 // метод — рабочий баг/несостыковка на стороне самого Loodsman, не в клиенте.
-private suspend fun MigrationContext.assignMaterialAttributes(materialLoodsmanId: Int, attributeValues: Map<String, String>) {
+private suspend fun MigrationContext.assignMaterialAttributes(
+    materialLoodsmanId: Int,
+    attributeValues: Map<String, String>
+) {
     attributeValues.forEach { (name, value) ->
         try {
             loodsmanClient.editObject.upAttrValueById(
@@ -231,11 +244,11 @@ private suspend fun MigrationContext.assignMaterialAttributes(materialLoodsmanId
                 UpAttrValueByIdInputDto(idVersion = materialLoodsmanId, attrName = name, attrValue = value)
             )
         } catch (e: Exception) {
-            System.err.println(
+            logger.error(
                 "Материал по КД: не удалось проставить атрибут '$name' на объект $materialLoodsmanId: ${e.message}"
             )
             (e as? ResponseException)?.let {
-                System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
             }
         }
     }
@@ -260,9 +273,9 @@ private suspend fun MigrationContext.linkMaterialToDetail(
     true
 } catch (e: Exception) {
     failures.incrementAndGet()
-    System.err.println("Не удалось связать материал ($materialLoodsmanId) с деталью (${candidate.detailLoodsmanId}): ${e.message}")
+    logger.error("Не удалось связать материал ($materialLoodsmanId) с деталью (${candidate.detailLoodsmanId}): ${e.message}")
     (e as? ResponseException)?.let {
-        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
     }
     false
 }
@@ -289,7 +302,7 @@ private suspend fun MigrationContext.createSubstituteChangeGroups(
 ) {
     val detailsWithBoth = substituteLinked.keys.filter { it in mainLinked }
     if (detailsWithBoth.isEmpty()) {
-        println("Группы замены материала: деталей с основным материалом и заменителем нет, пропускаем")
+        logger.info("Группы замены материала: деталей с основным материалом и заменителем нет, пропускаем")
         return
     }
 
@@ -309,9 +322,9 @@ private suspend fun MigrationContext.createSubstituteChangeGroups(
         )
     }
 
-    println(
+    logger.info(
         "Группы замены материала: деталей ${detailsWithBoth.size}, создано групп ${groupsCreated.get()}, " +
-            "создано вариантов ${variantsCreated.get()}, ошибок ${failures.get()}"
+                "создано вариантов ${variantsCreated.get()}, ошибок ${failures.get()}"
     )
 }
 
@@ -346,10 +359,10 @@ private suspend fun MigrationContext.createSubstituteChangeGroup(
 
         if (mainLinkId == null || substituteLinkId == null) {
             failures.incrementAndGet()
-            System.err.println(
+            logger.error(
                 "Группа замены (деталь $detailLoodsmanId): не найдена связь через get-linked-fast " +
-                    "(основной материал $mainMaterialLoodsmanId -> idLink=$mainLinkId, " +
-                    "заменитель $substituteMaterialLoodsmanId -> idLink=$substituteLinkId)"
+                        "(основной материал $mainMaterialLoodsmanId -> idLink=$mainLinkId, " +
+                        "заменитель $substituteMaterialLoodsmanId -> idLink=$substituteLinkId)"
             )
             return
         }
@@ -377,9 +390,9 @@ private suspend fun MigrationContext.createSubstituteChangeGroup(
         variantsCreated.incrementAndGet()
     } catch (e: Exception) {
         failures.incrementAndGet()
-        System.err.println("Не удалось создать группу замены материала (деталь $detailLoodsmanId): ${e.message}")
+        logger.error("Не удалось создать группу замены материала (деталь $detailLoodsmanId): ${e.message}")
         (e as? ResponseException)?.let {
-            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+            logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
         }
     }
 }
@@ -408,7 +421,10 @@ private suspend fun MigrationContext.resolveOrCreateMaterial(
     return elementCacheMutex.withLock {
         elementCache[key]?.let { return@withLock it }
 
-        val location = callPolynom { token -> polynomClient.classification.getLocation(token, element) }
+        val location = callPolynom { token ->
+            polynomClient.element.getBoLocation(token, element)
+//            polynomClient.classification.getLocation(token, element)
+        }
         val created = loodsmanClient.editObject.createBoObject(
             sessionId,
             CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)
@@ -483,7 +499,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
             ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
             ?: throw IllegalStateException(
                 "Справочник «${hierarchy.referenceName}» не найден в ПОЛИНОМ — должен быть создан вручную " +
-                    "вместе с правилом связывания типа, программное создание не подхватывается Loodsman"
+                        "вместе с правилом связывания типа, программное создание не подхватывается Loodsman"
             )
 
         val catalog = callPolynom { token -> polynomClient.classification.getCatalogsByReference(token, reference) }
@@ -491,7 +507,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
             ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
             ?: throw IllegalStateException(
                 "Каталог «${hierarchy.catalogName}» не найден в справочнике «${hierarchy.referenceName}» — " +
-                    "должен быть создан вручную"
+                        "должен быть создан вручную"
             )
 
         val group = callPolynom { token -> polynomClient.classification.getGroupsByCatalog(token, catalog) }
@@ -499,7 +515,7 @@ private suspend fun MigrationContext.resolveMaterialsGroup(mutex: Mutex): Identi
             ?.let { IdentifiableObjectDto(it.objectId, it.typeId) }
             ?: throw IllegalStateException(
                 "Группа «${hierarchy.groupName}» не найдена в каталоге «${hierarchy.catalogName}» — " +
-                    "должна быть создана вручную"
+                        "должна быть создана вручную"
             )
 
         materialsGroupId = group
@@ -536,17 +552,18 @@ suspend fun MigrationContext.runBomMaterialsMigration() {
     try {
         runBomMaterialsMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
 
 private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
     if (bomMaterialCandidates.isEmpty()) {
-        println("Материалы по КД (DS): кандидатов нет, пропускаем")
+        logger.info("Материалы по КД (DS): кандидатов нет, пропускаем")
         return
     }
 
+    logger.info("Миграция материалов по КД (DS): обработка ${bomMaterialCandidates.size} кандидатов...")
     val materials = settings.mapping.materials
     val classifierCodeProperty = materials.classifierCodePropertyId
         ?: resolvePropertyDefinitionByAbsoluteCode(materials.classifierCodePropertyAbsoluteCode)
@@ -595,14 +612,14 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
                     )
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Не удалось создать материал по КД (DS) для кода классификатора '$classifierCode': ${e.message}"
                     )
                     return@async
                 }
                 if (materialLoodsmanId == null) {
                     notFound.incrementAndGet()
-                    println("Материал по КД (DS) пропущен: код классификатора '$classifierCode' не найден в ПОЛИНОМ")
+                    logger.info("Материал по КД (DS) пропущен: код классификатора '$classifierCode' не найден в ПОЛИНОМ")
                     return@async
                 }
                 group.map { candidate ->
@@ -624,11 +641,11 @@ private suspend fun MigrationContext.runBomMaterialsMigrationInternal() {
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Материалы по КД (DS): уникальных кодов ${candidatesByCode.size}, создано объектов ${materialsCreated.get()}, " +
-            "связей ${linksCreated.get()}, не найдено в ПОЛИНОМ ${notFound.get()}, ошибок ${failures.get()}, " +
-            "единиц измерения назначено ${unitsAssigned.get()}, обозначение не найдено ${unitsNotFound.get()}, " +
-            "коллизий обозначения ${unitsCollision.get()}"
+                "связей ${linksCreated.get()}, не найдено в ПОЛИНОМ ${notFound.get()}, ошибок ${failures.get()}, " +
+                "единиц измерения назначено ${unitsAssigned.get()}, обозначение не найдено ${unitsNotFound.get()}, " +
+                "коллизий обозначения ${unitsCollision.get()}"
     )
 }
 
@@ -656,11 +673,11 @@ private suspend fun MigrationContext.linkBomMaterialToParent(
         linksCreated.incrementAndGet()
     } catch (e: Exception) {
         failures.incrementAndGet()
-        System.err.println(
+        logger.error(
             "Не удалось связать материал по КД ($materialLoodsmanId) с объектом ($parentLoodsmanId): ${e.message}"
         )
         (e as? ResponseException)?.let {
-            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+            logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
         }
     }
 }
@@ -698,10 +715,12 @@ suspend fun MigrationContext.resolveBomMaterialByClassifierCode(
         elementCache[key]?.let { return@withLock it }
 
         val location = callPolynom { token ->
-            polynomClient.classification.getLocation(
-                token,
-                IdentifiableObjectDto(found.objectId, found.typeId)
-            )
+            polynomClient.element.getBoLocation(token, IdentifiableObjectDto(found.objectId, found.typeId))
+
+//            polynomClient.classification.getLocation(
+//                token,
+//                IdentifiableObjectDto(found.objectId, found.typeId)
+//            )
         }
         val created = loodsmanClient.editObject.createBoObject(
             sessionId,

@@ -3,6 +3,9 @@ package com.khan366kos.lis.client.ktor.migration
 import com.khan366kos.lis.client.ktor.domain.Attribute
 import com.khan366kos.lis.client.ktor.domain.ReplaceRule
 import com.khan366kos.lis.client.ktor.domain.ResolvedAttribute
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("AttributeResolver")
 
 object ReplaceRuleStrategies {
     fun resolve(rule: ReplaceRule?, rawValue: String?): String? = when (rule) {
@@ -20,7 +23,7 @@ private fun normalizeIfNumeric(attr: Attribute, resolved: String): String? {
     if (!attr.numeric) return resolved
     val normalized = resolved.replace(",", ".")
     if (normalized.toDoubleOrNull() == null) {
-        System.err.println(
+        logger.error(
             "Атрибуты: значение '$resolved' в столбце '${attr.attrColumn}' не читается как число — " +
                 "атрибут '${attr.loodsmanAttr}' не проставлен"
         )

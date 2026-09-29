@@ -4,6 +4,9 @@ import com.khan366kos.lis.client.ktor.domain.MigrationContext
 import io.ktor.client.plugins.ResponseException
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("PolynomAuthRetry")
 
 // ПОЛИНОМ access_token живёт 600с (см. TokenPairDto.expiresIn) — длинная миграция переживает
 // протухание токена посреди прогона, сервер отвечает 401 на любой следующий вызов ПОЛИНОМ.
@@ -34,6 +37,6 @@ private suspend fun MigrationContext.refreshPolynomToken(staleToken: String): St
         val refreshed = polynomClient.login.updateToken(polynomAccessToken, polynomRefreshToken)
         polynomAccessToken = refreshed.accessToken
         polynomRefreshToken = refreshed.refreshToken ?: polynomRefreshToken
-        println("ПОЛИНОМ: access_token обновлён по refresh_token (истёк во время миграции)")
+        logger.info("ПОЛИНОМ: access_token обновлён по refresh_token (истёк во время миграции)")
         polynomAccessToken
     }

@@ -7,6 +7,9 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.delay
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("ClientHelpers")
 
 suspend fun HttpClient.getWithSession(
     url: String,
@@ -55,7 +58,7 @@ suspend fun <T> retryOnTransientError(
             val transient = e is HttpRequestTimeoutException ||
                 (e is ResponseException && e.response.status.value in 500..599)
             if (!transient || attempt >= times) throw e
-            System.err.println("Повтор запроса после ошибки (попытка $attempt/$times): ${e.message}")
+            logger.error("Повтор запроса после ошибки (попытка $attempt/$times): ${e.message}")
             delay(delayMs)
             delayMs *= 2
         }

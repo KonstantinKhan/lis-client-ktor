@@ -22,25 +22,37 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("MigrationEngine")
 
 // Реальная конкурентность к Loodsman ограничена только Client.requestGate (Semaphore).
 // Здесь строки обрабатываются все сразу: локальная работа (матчинг правил, сборка DTO) дешёвая,
 // корутины большую часть времени просто ждут permit — это и есть единственная точка троттлинга.
 suspend fun MigrationContext.runObjectsMigration() {
     val objectsSheet = settings.mapping.objectsSheet
+    logger.info("Парсинг Excel: лист '${objectsSheet.name}'...")
     val rows = ExcelSaxParser().parse(excelInputStream(), objectsSheet.name).toList()
+    logger.info("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == objectsSheet.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${objectsSheet.headersRow}) на листе '${objectsSheet.name}'"
         )
+    logger.info("  найдена строка заголовков (индекс ${objectsSheet.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    logger.info("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > objectsSheet.headersRow }
+    logger.info("  отфильтровано строк для обработки: ${dataRows.size}")
 
     val objectsCreated = AtomicInteger(0)
     val rowsFailed = AtomicInteger(0)
 
+    logger.info("Обработка строк (параллельно)...")
     val results = coroutineScope {
         dataRows.map { excelRow ->
             async {
@@ -48,6 +60,7 @@ suspend fun MigrationContext.runObjectsMigration() {
             }
         }.awaitAll()
     }
+    logger.info("  обработка завершена")
 
     // Слияние в общие списки идёт последовательно, после awaitAll() — сами row-корутины
     // ничего не пишут в identifiers/materialCandidates/bomMaterialSpecClassifierIds/
@@ -75,12 +88,12 @@ suspend fun MigrationContext.runObjectsMigration() {
     // ПОЛИНОМ в момент создания, повторная классификация им не нужна.
     classifyCreatedObjects(results.flatMap { it.classificationCandidates })
 
-    println(
+    logger.info(
         "Объекты: строк ${dataRows.size}, создано объектов ${objectsCreated.get()}, " +
-            "с привязкой к классификатору ${created.size}, ошибок ${rowsFailed.get()}, " +
-            "DS-объектов ${bomMaterialSpecClassifierIds.size}, " +
-            "строк раздела Материалы ${bomMaterialRowClassifierIds.size}, " +
-            "кандидатов на заготовки ${blankCandidates.size}"
+                "с привязкой к классификатору ${created.size}, ошибок ${rowsFailed.get()}, " +
+                "DS-объектов ${bomMaterialSpecClassifierIds.size}, " +
+                "строк раздела Материалы ${bomMaterialRowClassifierIds.size}, " +
+                "кандидатов на заготовки ${blankCandidates.size}"
     )
 }
 
@@ -120,32 +133,35 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
                     }.firstOrNull()
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Классификация: не удалось выполнить поиск в ПОЛИНОМ по коду классификатора " +
-                            "'$classifierId' (объекты ${group.map { it.loodsmanId }}): ${e.message}"
+                                "'$classifierId' (объекты ${group.map { it.loodsmanId }}): ${e.message}"
                     )
                     return@async
                 }
                 if (found == null) {
                     notFoundInPolynom.incrementAndGet()
-                    println(
+                    logger.info(
                         "Классификация: код классификатора '$classifierId' не найден в ПОЛИНОМ — объекты " +
-                            "${group.map { it.loodsmanId }} остаются без классификации"
+                                "${group.map { it.loodsmanId }} остаются без классификации"
                     )
                     return@async
                 }
 
                 val location = try {
                     callPolynom { token ->
-                        polynomClient.classification.getLocation(
+                        polynomClient.element.getBoLocation(
                             token, IdentifiableObjectDto(found.objectId, found.typeId)
                         )
+//                        polynomClient.classification.getLocation(
+//                            token, IdentifiableObjectDto(found.objectId, found.typeId)
+//                        )
                     }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Классификация: не удалось получить location для кода классификатора " +
-                            "'$classifierId' (объекты ${group.map { it.loodsmanId }}): ${e.message}"
+                                "'$classifierId' (объекты ${group.map { it.loodsmanId }}): ${e.message}"
                     )
                     return@async
                 }
@@ -164,9 +180,9 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
                             classified.incrementAndGet()
                         } catch (e: Exception) {
                             failures.incrementAndGet()
-                            System.err.println(
+                            logger.error(
                                 "Классификация: не удалось привязать объект ${candidate.loodsmanId} " +
-                                    "(код классификатора '$classifierId') к ПОЛИНОМ: ${e.message}"
+                                        "(код классификатора '$classifierId') к ПОЛИНОМ: ${e.message}"
                             )
                         }
                     }
@@ -175,10 +191,10 @@ private suspend fun MigrationContext.classifyCreatedObjects(candidates: List<Obj
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Классификация в ПОЛИНОМ: кандидатов ${candidates.size}, уникальных кодов ${byClassifierId.size}, " +
-            "классифицировано ${classified.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, " +
-            "ошибок ${failures.get()}"
+                "классифицировано ${classified.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, " +
+                "ошибок ${failures.get()}"
     )
 }
 
@@ -188,6 +204,7 @@ private data class LinkRowData(
     val analogGroup: AnalogGroupInfo?,
     val comment: String?,
 )
+
 private data class LinkPair(
     val parent: Identifier,
     val child: Identifier,
@@ -195,17 +212,27 @@ private data class LinkPair(
     val unitDesignation: String?,
     val comment: String?,
 )
+
 private data class AnalogGroupInfo(val groupNumber: Int, val variantNumber: Int, val isBasic: Boolean)
 
 suspend fun MigrationContext.runLinksMigration() {
     val linksSheet = settings.mapping.linksSheet
+    logger.info("Парсинг Excel: лист '${linksSheet.name}'...")
     val rows = ExcelSaxParser().parse(excelInputStream(), linksSheet.name).toList()
+    logger.info("  загружено строк: ${rows.size}")
+
     val headerRow = rows.firstOrNull { it.rowIndex == linksSheet.headersRow }
         ?: throw IllegalStateException(
             "Не найдена строка заголовков (индекс ${linksSheet.headersRow}) на листе '${linksSheet.name}'"
         )
+    logger.info("  найдена строка заголовков (индекс ${linksSheet.headersRow})")
+
     val headerMap = SheetHeaders.build(headerRow.cells)
+    logger.info("  построена карта полей (${headerMap.size} полей)")
+
     val dataRows = rows.filter { it.rowIndex > linksSheet.headersRow }
+    logger.info("  отфильтровано строк для обработки: ${dataRows.size}")
+    logger.info("Связи: текущих объектов ${identifiers.size}, обработка ${dataRows.size} строк связей...")
 
     val linksFailed = AtomicInteger(0)
     val unitsNotFound = AtomicInteger(0)
@@ -246,12 +273,19 @@ suspend fun MigrationContext.runLinksMigration() {
             if (parentId in bomMaterialSpecClassifierIds) {
                 if (quantity == null) {
                     linksFailed.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Связь ($parentId -> $childRaw) пропущена: не удалось прочитать '${linksSheet.quantityColumn}'"
                     )
                 } else {
                     elementsByClassifierId[parentId]?.forEach { parent ->
-                        bomMaterialCandidates.add(BomMaterialCandidate(parent.loodsmanId, childRaw, quantity, unitDesignation))
+                        bomMaterialCandidates.add(
+                            BomMaterialCandidate(
+                                parent.loodsmanId,
+                                childRaw,
+                                quantity,
+                                unitDesignation
+                            )
+                        )
                     }
                 }
             }
@@ -267,28 +301,31 @@ suspend fun MigrationContext.runLinksMigration() {
             when {
                 production == null || withoutMerge == null -> {
                     analogGroupsFailed.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Группа аналогов ($parentId -> $childId, группа $groupNumber-$variantNumber) пропущена: " +
-                            "не удалось прочитать '${analogGroups.productionQuantityColumn}' или " +
-                            "'${analogGroups.productionQuantityWithoutMergeColumn}'"
+                                "не удалось прочитать '${analogGroups.productionQuantityColumn}' или " +
+                                "'${analogGroups.productionQuantityWithoutMergeColumn}'"
                     )
                     null
                 }
+
                 production != 0.0 && withoutMerge != 0.0 -> {
-                    println("Группа аналогов: строка $parentId -> $childId прочитана, группа $groupNumber-$variantNumber, isBasic=true")
+                    logger.info("Группа аналогов: строка $parentId -> $childId прочитана, группа $groupNumber-$variantNumber, isBasic=true")
                     AnalogGroupInfo(groupNumber, variantNumber, isBasic = true)
                 }
+
                 production == 0.0 && withoutMerge == 0.0 -> {
-                    println("Группа аналогов: строка $parentId -> $childId прочитана, группа $groupNumber-$variantNumber, isBasic=false")
+                    logger.info("Группа аналогов: строка $parentId -> $childId прочитана, группа $groupNumber-$variantNumber, isBasic=false")
                     AnalogGroupInfo(groupNumber, variantNumber, isBasic = false)
                 }
+
                 else -> {
                     analogGroupsFailed.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Группа аналогов ($parentId -> $childId, группа $groupNumber-$variantNumber) пропущена: " +
-                            "несогласованные производственные количества " +
-                            "('${analogGroups.productionQuantityColumn}'=$production, " +
-                            "'${analogGroups.productionQuantityWithoutMergeColumn}'=$withoutMerge)"
+                                "несогласованные производственные количества " +
+                                "('${analogGroups.productionQuantityColumn}'=$production, " +
+                                "'${analogGroups.productionQuantityWithoutMergeColumn}'=$withoutMerge)"
                     )
                     null
                 }
@@ -311,18 +348,18 @@ suspend fun MigrationContext.runLinksMigration() {
         val parents = elementsByClassifierId[parentClassifierId]
         if (parents == null) {
             parentsNotFound.incrementAndGet()
-            System.err.println(
+            logger.error(
                 "Связь: родитель с кодом классификатора '$parentClassifierId' не найден среди " +
-                    "созданных объектов — все связи этого родителя пропущены"
+                        "созданных объектов — все связи этого родителя пропущены"
             )
             return@flatMap emptyList()
         }
         children.flatMap { (childClassifierId, rowData) ->
             if (rowData.quantity == null) {
                 linksFailed.incrementAndGet()
-                System.err.println(
+                logger.error(
                     "Связь ($parentClassifierId -> $childClassifierId) пропущена: " +
-                        "не удалось прочитать '${linksSheet.quantityColumn}'"
+                            "не удалось прочитать '${linksSheet.quantityColumn}'"
                 )
                 return@flatMap emptyList()
             }
@@ -350,9 +387,9 @@ suspend fun MigrationContext.runLinksMigration() {
                     // на тот же location в BomMaterialsEngine, конфликт по уникальному индексу).
                     // Явная группа аналогов — более специфичный сигнал, приоритет за ней.
                     val info = rowData.analogGroup
-                    println(
+                    logger.info(
                         "Группа аналогов: потомок $childClassifierId (родитель $parentClassifierId, группа " +
-                            "${info.groupNumber}-${info.variantNumber}) не резолвился в структуре — отложен на fallback"
+                                "${info.groupNumber}-${info.variantNumber}) не резолвился в структуре — отложен на fallback"
                     )
                     parents.forEach { parent ->
                         unresolvedAnalogGroupCandidates.add(
@@ -382,9 +419,9 @@ suspend fun MigrationContext.runLinksMigration() {
                     }
                 } else {
                     childrenNotFound.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Связь ($parentClassifierId -> $childClassifierId) пропущена: код классификатора " +
-                            "входящего объекта не найден среди созданных объектов"
+                                "входящего объекта не найден среди созданных объектов"
                     )
                 }
                 return@flatMap emptyList()
@@ -392,9 +429,9 @@ suspend fun MigrationContext.runLinksMigration() {
             parents.flatMap { parent ->
                 children2.map { child ->
                     rowData.analogGroup?.let { info ->
-                        println(
+                        logger.info(
                             "Группа аналогов: кандидат добавлен напрямую (родитель ${parent.loodsmanId}, потомок " +
-                                "${child.loodsmanId}, группа ${info.groupNumber}-${info.variantNumber}, isBasic=${info.isBasic})"
+                                    "${child.loodsmanId}, группа ${info.groupNumber}-${info.variantNumber}, isBasic=${info.isBasic})"
                         )
                         analogGroupCandidates.add(
                             AnalogGroupCandidate(
@@ -443,13 +480,36 @@ suspend fun MigrationContext.runLinksMigration() {
                 val childOfSameTypeLinkType = pair.child.childOfSameTypeLinkType
                 val linkId = when {
                     childLinkType != null && pair.parent.childLinkType != null && childOfSameTypeLinkType != null -> {
-                        linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, childOfSameTypeLinkType, linksFailed, pair.quantity, unitId)
+                        linkObjects(
+                            pair.parent.loodsmanId,
+                            pair.child.loodsmanId,
+                            childOfSameTypeLinkType,
+                            linksFailed,
+                            pair.quantity,
+                            unitId
+                        )
                     }
+
                     childLinkType != null -> {
-                        linkObjects(pair.child.loodsmanId, pair.parent.loodsmanId, childLinkType, linksFailed, pair.quantity, unitId)
+                        linkObjects(
+                            pair.child.loodsmanId,
+                            pair.parent.loodsmanId,
+                            childLinkType,
+                            linksFailed,
+                            pair.quantity,
+                            unitId
+                        )
                     }
+
                     else -> {
-                        linkObjects(pair.parent.loodsmanId, pair.child.loodsmanId, linksSheet.linkType, linksFailed, pair.quantity, unitId)
+                        linkObjects(
+                            pair.parent.loodsmanId,
+                            pair.child.loodsmanId,
+                            linksSheet.linkType,
+                            linksFailed,
+                            pair.quantity,
+                            unitId
+                        )
                     }
                 }
 
@@ -473,7 +533,7 @@ suspend fun MigrationContext.runLinksMigration() {
                     } else {
                         commentAttrFailures.incrementAndGet()
                         failed.forEach {
-                            System.err.println(
+                            logger.error(
                                 "Связи: не удалось проставить атрибут '${it.attributeName}' на связь $linkId: ${it.errorMessage}"
                             )
                         }
@@ -485,15 +545,15 @@ suspend fun MigrationContext.runLinksMigration() {
         }.awaitAll()
     }.count { it != null }
 
-    println(
+    logger.info(
         "Связи: строк ${dataRows.size}, пар для линковки ${linkPairs.size}, создано $linksCreated, " +
-            "ошибок ${linksFailed.get()}, единиц измерения назначено ${unitsAssigned.get()}, " +
-            "обозначение не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}, " +
-            "кандидатов на Материал по КД ${bomMaterialCandidates.size}, " +
-            "кандидатов на группы аналогов ${analogGroupCandidates.size}, " +
-            "ошибок групп аналогов ${analogGroupsFailed.get()}, " +
-            "родителей не найдено ${parentsNotFound.get()}, потомков не найдено ${childrenNotFound.get()}, " +
-            "атрибутов комментария назначено ${commentsAssigned.get()}, ошибок атрибута комментария ${commentAttrFailures.get()}"
+                "ошибок ${linksFailed.get()}, единиц измерения назначено ${unitsAssigned.get()}, " +
+                "обозначение не найдено ${unitsNotFound.get()}, коллизий обозначения ${unitsCollision.get()}, " +
+                "кандидатов на Материал по КД ${bomMaterialCandidates.size}, " +
+                "кандидатов на группы аналогов ${analogGroupCandidates.size}, " +
+                "ошибок групп аналогов ${analogGroupsFailed.get()}, " +
+                "родителей не найдено ${parentsNotFound.get()}, потомков не найдено ${childrenNotFound.get()}, " +
+                "атрибутов комментария назначено ${commentsAssigned.get()}, ошибок атрибута комментария ${commentAttrFailures.get()}"
     )
 
     runAnalogGroupsMigration()
@@ -521,9 +581,10 @@ suspend fun MigrationContext.resolveUnitId(
     return when {
         matches.isEmpty() -> {
             unitsNotFound.incrementAndGet()
-            System.err.println("Единица измерения '$designation' не найдена в Measure/units-by-designation")
+            logger.error("Единица измерения '$designation' не найдена в Measure/units-by-designation")
             null
         }
+
         matches.size == 1 -> matches.single().id
         else -> {
             val preferred = preferredMeasureName?.let { name -> matches.filter { it.measureName == name } }
@@ -531,9 +592,9 @@ suspend fun MigrationContext.resolveUnitId(
                 preferred.single().id
             } else {
                 unitsCollision.incrementAndGet()
-                System.err.println(
+                logger.error(
                     "Обозначение '$designation' неоднозначно (${matches.size} совпадений в разных величинах) — " +
-                        "unit для этих связей не проставляется"
+                            "unit для этих связей не проставляется"
                 )
                 null
             }
@@ -577,13 +638,14 @@ private suspend fun MigrationContext.resolvePolynomBackedObjects(candidates: Lis
                     }.firstOrNull()
                     if (found == null) {
                         notFoundInPolynom.incrementAndGet()
-                        println("'$target': код классификатора '$classifierId' не найден в ПОЛИНОМ, объект не создан")
+                        logger.info("'$target': код классификатора '$classifierId' не найден в ПОЛИНОМ, объект не создан")
                         return@async null
                     }
                     val location = callPolynom { token ->
-                        polynomClient.classification.getLocation(
-                            token, IdentifiableObjectDto(found.objectId, found.typeId)
-                        )
+                        polynomClient.element.getBoLocation(token, IdentifiableObjectDto(found.objectId, found.typeId))
+//                        polynomClient.classification.getLocation(
+//                            token, IdentifiableObjectDto(found.objectId, found.typeId)
+//                        )
                     }
                     val created = loodsmanClient.editObject.createBoObject(
                         sessionId,
@@ -593,7 +655,7 @@ private suspend fun MigrationContext.resolvePolynomBackedObjects(candidates: Lis
                     Identifier(loodsmanId = created, classifierId = classifierId)
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println("Не удалось создать '$target' по коду классификатора '$classifierId': ${e.message}")
+                    logger.error("Не удалось создать '$target' по коду классификатора '$classifierId': ${e.message}")
                     null
                 }
             }
@@ -601,9 +663,9 @@ private suspend fun MigrationContext.resolvePolynomBackedObjects(candidates: Lis
     }.filterNotNull()
 
     identifiers.addAll(resolved)
-    println(
+    logger.info(
         "Объекты через ПОЛИНОМ (Стандартные/Прочие изделия): кодов ${byClassifierId.size}, " +
-            "создано ${objectsCreated.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, ошибок ${failures.get()}"
+                "создано ${objectsCreated.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, ошибок ${failures.get()}"
     )
 }
 
@@ -694,7 +756,8 @@ private suspend fun MigrationContext.processObjectRow(
     // постобработки после того, как все строки Excel уже прочитаны (runMaterialsMigration) —
     // столбцы (1)/(2) читаются независимо от identifierColumn листа "Связи".
     val materials = settings.mapping.materials
-    val materialTargetObjects = createdObjects.filter { (mappingElement, _) -> mappingElement.target in materials.appliesToTargets }
+    val materialTargetObjects =
+        createdObjects.filter { (mappingElement, _) -> mappingElement.target in materials.appliesToTargets }
     // Атрибуты объекта "Материал по КД" (поток A/B) — читаются с ЭТОЙ строки Детали, один раз,
     // переиспользуются и основным материалом, и заменителем (тот же приём, что classifierCode).
     val materialAttributeValues = resolveAttributes(materials.attributes, row)
@@ -763,10 +826,10 @@ private suspend fun MigrationContext.processObjectRow(
             val rate = blanks.rateColumn.takeIf { it.isNotBlank() }?.let { column ->
                 val parsed = row.value(column)?.replace(",", ".")?.toDoubleOrNull()
                 if (parsed == null) {
-                    System.err.println(
+                    logger.error(
                         "Заготовки: норма расхода не прочитана в столбце '$column' (деталь " +
-                            "'$designation', код классификатора материала '$classifierCode') — " +
-                            "заготовка/материал будут созданы без нормы"
+                                "'$designation', код классификатора материала '$classifierCode') — " +
+                                "заготовка/материал будут созданы без нормы"
                     )
                 }
                 parsed
@@ -879,7 +942,7 @@ private suspend fun MigrationContext.createLoodsmanObject(
             }
         )
         results.filterNot { it.isSuccess }.forEach {
-            System.err.println(
+            logger.error(
                 "Объекты: не удалось проставить атрибут '${it.attributeName}' на объект $loodsmanId: ${it.errorMessage}"
             )
         }
@@ -892,7 +955,7 @@ private suspend fun MigrationContext.createLoodsmanObject(
     loodsmanId
 } catch (e: Exception) {
     rowsFailed.incrementAndGet()
-    System.err.println("Не удалось создать объект (${mappingElement.target}, $keyAttr): ${e.message}")
+    logger.error("Не удалось создать объект (${mappingElement.target}, $keyAttr): ${e.message}")
     null
 }
 
@@ -917,10 +980,14 @@ private suspend fun MigrationContext.linkObjects(
     ).asInt()
 } catch (e: Exception) {
     failCounter.incrementAndGet()
-    System.err.println("Не удалось создать связь ($parentLoodsmanId -> $childLoodsmanId): ${e.message}")
+    logger.error("Не удалось создать связь ($parentLoodsmanId -> $childLoodsmanId): ${e.message}")
     null
 }
 
 // Без private — переиспользуется в CastingBlanksEngine.kt (свой отдельный лист Excel, тот же
 // источник settings.mapping.source).
-fun MigrationContext.excelInputStream() = File(settings.mapping.source.path).inputStream()
+// LIS_EXCEL_PATH переопределяет settings.mapping.source.path, если задана — нужно для docker:
+// хостовый путь в settings.json (общий для локального запуска) не совпадает с путём внутри
+// контейнера, куда docker-compose монтирует xlsx (см. docker-compose.yml).
+fun MigrationContext.excelInputStream() =
+    File(System.getenv("LIS_EXCEL_PATH") ?: settings.mapping.source.path).inputStream()

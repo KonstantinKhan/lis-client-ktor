@@ -15,7 +15,10 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("AnalogGroupsEngine")
 
 // Тот же код группы (2), что CHANGE_GROUP_TYPE_MATERIAL в MaterialsEngine.kt — подтверждено
 // пользователем как один и тот же тип группы замены в Loodsman, новый тип не заводим.
@@ -38,7 +41,7 @@ suspend fun MigrationContext.runAnalogGroupsMigration() {
     }
 
     if (analogGroupCandidates.isEmpty()) {
-        println("Группы аналогов: кандидатов нет, пропускаем")
+        logger.info("Группы аналогов: кандидатов нет, пропускаем")
         return
     }
 
@@ -57,7 +60,7 @@ suspend fun MigrationContext.runAnalogGroupsMigration() {
         )
     }
 
-    println(
+    logger.info(
         "Группы аналогов: групп-кандидатов ${groupsByKey.size}, создано групп ${groupsCreated.get()}, " +
             "создано вариантов ${variantsCreated.get()}, пропущено групп целиком ${groupsSkipped.get()}, " +
             "ошибок ${failures.get()}"
@@ -88,7 +91,7 @@ private suspend fun MigrationContext.createAnalogChangeGroup(
             // же политика "без частичных групп", что у групп замены материала (там ровно 2
             // варианта), распространённая здесь на N вариантов.
             groupsSkipped.incrementAndGet()
-            System.err.println(
+            logger.error(
                 "Группа аналогов (родитель $parentLoodsmanId, группа $groupNumber) пропущена целиком: " +
                     "не найдена связь через get-linked-fast для childLoodsmanId=" +
                     missing.joinToString { it.childLoodsmanId.toString() }
@@ -120,9 +123,9 @@ private suspend fun MigrationContext.createAnalogChangeGroup(
         }
     } catch (e: Exception) {
         failures.incrementAndGet()
-        System.err.println("Не удалось создать группу аналогов (родитель $parentLoodsmanId, группа $groupNumber): ${e.message}")
+        logger.error("Не удалось создать группу аналогов (родитель $parentLoodsmanId, группа $groupNumber): ${e.message}")
         (e as? ResponseException)?.let {
-            System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+            logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
         }
     }
 }
@@ -176,7 +179,7 @@ private suspend fun MigrationContext.resolveUnresolvedAnalogGroupCandidates() {
                     resolveOrCreateAnalogFallbackObject(code, classifierCodeProperty, searchScope, materials, objectsCreated)
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println("Группы аналогов: не удалось создать объект по коду классификатора '$code': ${e.message}")
+                    logger.error("Группы аналогов: не удалось создать объект по коду классификатора '$code': ${e.message}")
                     null
                 }
             }
@@ -193,7 +196,7 @@ private suspend fun MigrationContext.resolveUnresolvedAnalogGroupCandidates() {
                 val childLoodsmanId = loodsmanIdByCode[code]
                 if (childLoodsmanId == null) {
                     notFoundInPolynom.incrementAndGet()
-                    println("Группы аналогов: код классификатора '$code' не найден в ПОЛИНОМ, ${candidates.size} кандидат(ов) пропущено")
+                    logger.info("Группы аналогов: код классификатора '$code' не найден в ПОЛИНОМ, ${candidates.size} кандидат(ов) пропущено")
                     return@async emptyList<AnalogGroupCandidate>()
                 }
                 candidates.map { candidate ->
@@ -214,7 +217,7 @@ private suspend fun MigrationContext.resolveUnresolvedAnalogGroupCandidates() {
                             true
                         } catch (e: Exception) {
                             failures.incrementAndGet()
-                            System.err.println(
+                            logger.error(
                                 "Группы аналогов: не удалось связать fallback-объект ($childLoodsmanId) с родителем " +
                                     "(${candidate.parentLoodsmanId}): ${e.message}"
                             )
@@ -239,7 +242,7 @@ private suspend fun MigrationContext.resolveUnresolvedAnalogGroupCandidates() {
     }
     analogGroupCandidates.addAll(resolved)
 
-    println(
+    logger.info(
         "Группы аналогов (fallback через ПОЛИНОМ): кодов ${byClassifierCode.size}, создано объектов " +
             "${objectsCreated.get()}, создано связей ${linksCreated.get()}, не найдено в ПОЛИНОМ ${notFoundInPolynom.get()}, " +
             "ошибок ${failures.get()}"
@@ -271,7 +274,10 @@ private suspend fun MigrationContext.resolveOrCreateAnalogFallbackObject(
     // Обозначение при этом берётся не отдельным атрибутом, а автоматически из location-привязки
     // к найденному элементу ПОЛИНОМ (его "наименование") — тот же результат, другим путём.
     val element = IdentifiableObjectDto(found.objectId, found.typeId)
-    val location = callPolynom { token -> polynomClient.classification.getLocation(token, element) }
+    val location = callPolynom { token ->
+        polynomClient.element.getBoLocation(token, element)
+//        polynomClient.classification.getLocation(token, element)
+    }
     val created = loodsmanClient.editObject.createBoObject(
         sessionId,
         CreateBoObjectInputDto(type = materials.materialTarget, location = location, withLinks = false)

@@ -9,9 +9,13 @@ import com.khan366kos.lis.client.ktor.migration.runAuxMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runBlanksMigration
 import com.khan366kos.lis.client.ktor.migration.runBomMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runCastingBlanksLinksMigration
+import com.khan366kos.lis.client.ktor.migration.runDocumentsMigration
 import com.khan366kos.lis.client.ktor.migration.runLinksMigration
 import com.khan366kos.lis.client.ktor.migration.runMaterialsMigration
 import com.khan366kos.lis.client.ktor.migration.runObjectsMigration
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("MigrationWorkers")
 
 fun ICorChainDsl<MigrationContext>.validateMapping() = worker {
     on { status == Status.CONNECT_CHECKOUT }
@@ -48,7 +52,7 @@ fun ICorChainDsl<MigrationContext>.validateMapping() = worker {
         }
     }
     except { e ->
-        System.err.println("Проверка mapping не пройдена: ${e.message}")
+        logger.error("Проверка mapping не пройдена: ${e.message}")
         throw e
     }
 }
@@ -58,10 +62,10 @@ fun ICorChainDsl<MigrationContext>.migrateObjects() = worker {
     handle {
         runObjectsMigration()
         status = Status.OBJECTS_MIGRATED
-        println("Создано объектов: ${identifiers.size}")
+        logger.info("Создано объектов: ${identifiers.size}")
     }
     except { e ->
-        System.err.println("Ошибка миграции объектов: ${e.message}")
+        logger.error("Ошибка миграции объектов: ${e.message}")
         throw e
     }
 }
@@ -71,10 +75,10 @@ fun ICorChainDsl<MigrationContext>.migrateLinks() = worker {
     handle {
         runLinksMigration()
         status = Status.LINKS_MIGRATED
-        println("Миграция связей завершена")
+        logger.info("Миграция связей завершена")
     }
     except { e ->
-        System.err.println("Ошибка миграции связей: ${e.message}")
+        logger.error("Ошибка миграции связей: ${e.message}")
         throw e
     }
 }
@@ -84,12 +88,12 @@ fun ICorChainDsl<MigrationContext>.migrateMaterials() = worker {
     handle {
         runMaterialsMigration()
         status = Status.MATERIALS_MIGRATED
-        println("Миграция материалов ПОЛИНОМ завершена")
+        logger.info("Миграция материалов ПОЛИНОМ завершена")
     }
     except { e ->
         // Статус+тело ответа Полином печатаются внутри runMaterialsMigration() (except{} тут не
         // suspend, а ResponseException.response.bodyAsText() — suspend-вызов).
-        System.err.println("Ошибка миграции материалов ПОЛИНОМ: ${e.message}")
+        logger.error("Ошибка миграции материалов ПОЛИНОМ: ${e.message}")
         throw e
     }
 }
@@ -99,12 +103,12 @@ fun ICorChainDsl<MigrationContext>.migrateBomMaterials() = worker {
     handle {
         runBomMaterialsMigration()
         status = Status.BOM_MATERIALS_MIGRATED
-        println("Миграция материалов по КД (DS) завершена")
+        logger.info("Миграция материалов по КД (DS) завершена")
     }
     except { e ->
         // Как и в migrateMaterials() — статус+тело ответа Полином печатаются внутри
         // runBomMaterialsMigration(), except{} тут не suspend.
-        System.err.println("Ошибка миграции материалов по КД (DS): ${e.message}")
+        logger.error("Ошибка миграции материалов по КД (DS): ${e.message}")
         throw e
     }
 }
@@ -114,12 +118,12 @@ fun ICorChainDsl<MigrationContext>.migrateBlanks() = worker {
     handle {
         runBlanksMigration()
         status = Status.BLANKS_MIGRATED
-        println("Миграция заготовок завершена")
+        logger.info("Миграция заготовок завершена")
     }
     except { e ->
         // Как и в migrateMaterials()/migrateBomMaterials() — статус+тело ответа Полином печатаются
         // внутри runBlanksMigration(), except{} тут не suspend.
-        System.err.println("Ошибка миграции заготовок: ${e.message}")
+        logger.error("Ошибка миграции заготовок: ${e.message}")
         throw e
     }
 }
@@ -129,12 +133,12 @@ fun ICorChainDsl<MigrationContext>.migrateCastingBlanks() = worker {
     handle {
         runCastingBlanksLinksMigration()
         status = Status.CASTING_BLANKS_MIGRATED
-        println("Миграция литейных заготовок (связи) завершена")
+        logger.info("Миграция литейных заготовок (связи) завершена")
     }
     except { e ->
         // Как и в migrateBlanks() — статус+тело ответа печатаются внутри
         // runCastingBlanksLinksMigration(), except{} тут не suspend.
-        System.err.println("Ошибка миграции литейных заготовок: ${e.message}")
+        logger.error("Ошибка миграции литейных заготовок: ${e.message}")
         throw e
     }
 }
@@ -144,12 +148,27 @@ fun ICorChainDsl<MigrationContext>.migrateAuxMaterials() = worker {
     handle {
         runAuxMaterialsMigration()
         status = Status.AUX_MATERIALS_MIGRATED
-        println("Миграция вспомогательных материалов завершена")
+        logger.info("Миграция вспомогательных материалов завершена")
     }
     except { e ->
         // Как и в migrateCastingBlanks() — статус+тело ответа печатаются внутри
         // runAuxMaterialsMigration(), except{} тут не suspend.
-        System.err.println("Ошибка миграции вспомогательных материалов: ${e.message}")
+        logger.error("Ошибка миграции вспомогательных материалов: ${e.message}")
+        throw e
+    }
+}
+
+fun ICorChainDsl<MigrationContext>.migrateDocuments() = worker {
+    on { status == Status.AUX_MATERIALS_MIGRATED }
+    handle {
+        runDocumentsMigration()
+        status = Status.DOCUMENTS_MIGRATED
+        logger.info("Миграция сканов документов завершена")
+    }
+    except { e ->
+        // Как и в migrateAuxMaterials() — статус+тело ответа печатаются внутри
+        // runDocumentsMigration(), except{} тут не suspend.
+        logger.error("Ошибка миграции сканов документов: ${e.message}")
         throw e
     }
 }

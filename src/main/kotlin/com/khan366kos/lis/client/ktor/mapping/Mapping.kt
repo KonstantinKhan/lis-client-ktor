@@ -6,6 +6,7 @@ import com.khan366kos.lis.client.ktor.domain.AuxMaterialsSettings
 import com.khan366kos.lis.client.ktor.domain.BlanksSettings
 import com.khan366kos.lis.client.ktor.domain.BomMaterialsSettings
 import com.khan366kos.lis.client.ktor.domain.CastingBlanksSettings
+import com.khan366kos.lis.client.ktor.domain.DocumentsSheet
 import com.khan366kos.lis.client.ktor.domain.LinksSheet
 import com.khan366kos.lis.client.ktor.domain.MappingElement
 import com.khan366kos.lis.client.ktor.domain.MaterialsSettings
@@ -26,7 +27,8 @@ data class Mapping(
     val analogGroups: AnalogGroupsSettings = AnalogGroupsSettings.None,
     val blanks: BlanksSettings = BlanksSettings.None,
     val castingBlanks: CastingBlanksSettings = CastingBlanksSettings.None,
-    val auxMaterials: AuxMaterialsSettings = AuxMaterialsSettings.None
+    val auxMaterials: AuxMaterialsSettings = AuxMaterialsSettings.None,
+    val documentsSheet: DocumentsSheet = DocumentsSheet.None
 ) {
     companion object {
         val None = Mapping(

@@ -11,7 +11,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
+
+private val logger = LoggerFactory.getLogger("BlanksEngine")
 
 // Тай-брейк для resolveUnitId (см. MigrationEngine.kt) — НЕ фильтр: обозначение норм расхода не
 // всегда "Масса" (например "м2"/"м3" для других материалов), поэтому величина не режется заранее,
@@ -28,17 +31,18 @@ suspend fun MigrationContext.runBlanksMigration() {
     try {
         runBlanksMigrationInternal()
     } catch (e: ResponseException) {
-        System.err.println("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
+        logger.error("HTTP ${e.response.status.value}: ${e.response.bodyAsText()}")
         throw e
     }
 }
 
 private suspend fun MigrationContext.runBlanksMigrationInternal() {
     if (blankCandidates.isEmpty()) {
-        println("Заготовки: строк-кандидатов нет, пропускаем")
+        logger.info("Заготовки: строк-кандидатов нет, пропускаем")
         return
     }
 
+    logger.info("Миграция заготовок: обработка ${blankCandidates.size} кандидатов...")
     val blanks = settings.mapping.blanks
     val materials = settings.mapping.materials
     val classifierCodeProperty = materials.classifierCodePropertyId
@@ -126,7 +130,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         } else {
                             blankAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Заготовки: не удалось проставить атрибут '${it.attributeName}' на заготовку " +
                                         "$blankId: ${it.errorMessage}"
                                 )
@@ -159,7 +163,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                     )
                     if (materialId == null) {
                         materialsNotFound.incrementAndGet()
-                        println(
+                        logger.info(
                             "Заготовки: материал основной не найден в ПОЛИНОМ по коду классификатора " +
                                 "'${candidate.classifierCode}' (деталь ${candidate.detailLoodsmanId}, " +
                                 "заготовка $blankId создана без материала)"
@@ -199,7 +203,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         } else {
                             rateAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Заготовки: не удалось проставить '${blanks.rateAttribute}' на связи " +
                                         "$materialLinkId: ${it.errorMessage}"
                                 )
@@ -227,7 +231,7 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                         } else {
                             materialAttrFailures.incrementAndGet()
                             failed.forEach {
-                                System.err.println(
+                                logger.error(
                                     "Заготовки: не удалось проставить атрибут '${it.attributeName}' на связь " +
                                         "$materialLinkId: ${it.errorMessage}"
                                 )
@@ -236,18 +240,18 @@ private suspend fun MigrationContext.runBlanksMigrationInternal() {
                     }
                 } catch (e: Exception) {
                     failures.incrementAndGet()
-                    System.err.println(
+                    logger.error(
                         "Не удалось создать заготовку/материал (деталь ${candidate.detailLoodsmanId}): ${e.message}"
                     )
                     (e as? ResponseException)?.let {
-                        System.err.println("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
+                        logger.error("HTTP ${it.response.status.value}: ${it.response.bodyAsText()}")
                     }
                 }
             }
         }.awaitAll()
     }
 
-    println(
+    logger.info(
         "Заготовки: кандидатов ${blankCandidates.size}, создано заготовок ${blanksCreated.get()}, " +
             "связей деталь-заготовка ${blankLinksCreated.get()}, создано материалов ${materialsCreated.get()}, " +
             "связей заготовка-материал ${materialLinksCreated.get()}, " +

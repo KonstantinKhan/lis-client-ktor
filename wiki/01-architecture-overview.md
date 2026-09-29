@@ -18,8 +18,9 @@
 
 ## Запуск
 
-- `./run.sh` (Linux/WSL) / `run.cmd` (Windows) — собирают дистрибутив (`installDist`) и
-  запускают его. **Не** `./gradlew run`: авторизация (`login()` в
+- `./gradlew installDist && ./build/install/lis-client-ktor/bin/lis-client-ktor` (или
+  `./gradlew shadowJar && java -Dfile.encoding=UTF-8 -jar build/libs/lis-client-ktor-0.0.1-all.jar`)
+  — собирают и запускают напрямую. **Не** `./gradlew run`: авторизация (`login()` в
   `src/main/kotlin/com/khan366kos/lis/client/ktor/workers/LoginWorkers.kt`) читает пароль через
   `System.console()`, а под `gradlew run` JVM форкается через pipe, консоли там нет — упадёт с
   понятной ошибкой при попытке ввода пароля.

@@ -10,6 +10,9 @@ import com.khan366kos.lis.client.ktor.loodsman.api.dto.response.SaveFilesErrorOu
 import io.ktor.client.call.body
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.async
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("CheckoutWorkers")
 
 fun ICorChainDsl<MigrationContext>.checkout() = worker {
     on { status == Status.LOGIN_SUCCESS }
@@ -59,12 +62,12 @@ fun ICorChainDsl<MigrationContext>.connectCheckout() = worker {
                     // него ReplConsole переходит в COMMAND (см. workers/PolynomLoginWorkers.kt).
                     status = Status.CONNECT_CHECKOUT
                 }
-                println("Подключение от администратора")
+                logger.info("Подключение от администратора")
             },
             onFailure = {
-                println("Ошибка: ${it.message}")
+                logger.info("Ошибка: ${it.message}")
                 status = Status.NOT_ENOUGH_RIGHTS
-                println("Недостаточно прав для выполнения миграции")
+                logger.info("Недостаточно прав для выполнения миграции")
                 throw it
             }
         )
@@ -84,10 +87,10 @@ fun ICorChainDsl<MigrationContext>.checkin() = worker {
             }.await()
         }.fold(
             onSuccess = {
-                println(it)
+                logger.info(it.toString())
             },
             onFailure = {
-                println("Сохранение и возврат в базу прошли успешно")
+                logger.info("Сохранение и возврат в базу прошли успешно")
             }
         )
     }
